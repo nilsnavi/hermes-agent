@@ -11563,7 +11563,29 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _multiplex_skipped_platforms.append(platform)
                 continue
             enabled_platform_count += 1
-            
+
+            # Sprint 0.7 §6/§14: administratively disabled integrations
+            # (e.g. unused Home Assistant) are never connected — zero network
+            # attempts, async fail-soft, no startup delay.
+            try:
+                from agent.integrations import integration_disabled as _integration_disabled
+
+                if _integration_disabled(platform.value):
+                    logger.info(
+                        "✗ %s integration disabled (unused) — skipping connect (0 network attempts)",
+                        platform.value,
+                    )
+                    try:
+                        self._update_platform_runtime_status(
+                            platform.value, platform_state="disabled",
+                            error_code=None, error_message="integration disabled (unused)",
+                        )
+                    except Exception:
+                        pass
+                    continue
+            except Exception:
+                pass  # registry unavailable → behave exactly as before
+
             adapter = self._create_adapter(platform, platform_config)
             if not adapter:
                 # Distinguish between missing builtin deps and missing plugin
@@ -12981,6 +13003,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         needs_attention=True,
                         retrying_since=retrying_since_iso,
                     )
+                # Sprint 0.7: administratively disabled integrations drop out
+                # of the retry queue permanently (no reconnect attempts).
+                try:
+                    from agent.integrations import integration_disabled as _id
+
+                    if _id(platform.value):
+                        logger.info(
+                            "Reconnect %s: integration disabled — removing from retry queue",
+                            platform.value,
+                        )
+                        del self._failed_platforms[platform]
+                        continue
+                except Exception:
+                    pass
                 if now < info["next_retry"]:
                     continue  # not time yet
 
@@ -13039,6 +13075,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             adapter._voice_input_callback = self._handle_voice_channel_input
                         self.delivery_router.adapters = self.adapters
                         del self._failed_platforms[platform]
+                        # Sprint 0.7 §10: mark integration healthy + recovered.
+                        try:
+                            from agent.integrations import get_registry, recovered
+
+                            get_registry().mark_success(platform.value)
+                            recovered(platform.value, attempt)
+                        except Exception:
+                            pass
                         self._update_platform_runtime_status(
                             platform.value,
                             platform_state="connected",
@@ -13102,10 +13146,32 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         backoff = _reconnect_backoff(attempt)
                         info["attempts"] = attempt
                         info["next_retry"] = time.monotonic() + backoff
-                        logger.info(
-                            "Reconnect %s failed, next retry in %ds",
-                            platform.value, backoff,
-                        )
+                        # Sprint 0.7 §8/§9: classify + deduplicate identical
+                        # failures so a repeating DNS error cannot spam the
+                        # journal every 5 minutes.
+                        _err_msg = adapter.fatal_error_message or "failed to reconnect"
+                        try:
+                            from agent.integrations import record_failure, retry_scheduled
+
+                            _suppressed, _ec = record_failure(platform.value, _err_msg, attempt)
+                            # Sprint 0.7 §10: every scheduled retry is a
+                            # structured event (no secrets, no body text).
+                            retry_scheduled(platform.value, _ec, attempt, float(backoff))
+                            if _suppressed:
+                                logger.debug(
+                                    "Reconnect %s failed (%s) — suppressed (dedup)",
+                                    platform.value, _ec,
+                                )
+                            else:
+                                logger.warning(
+                                    "Reconnect %s failed: %s (errorClass=%s, next retry in %ds)",
+                                    platform.value, _err_msg, _ec, backoff,
+                                )
+                        except Exception:
+                            logger.info(
+                                "Reconnect %s failed, next retry in %ds",
+                                platform.value, backoff,
+                            )
                         # Same fd-leak concern as the non-retryable branch
                         # above: the adapter failed to connect and is being
                         # thrown away. Without an explicit dispose call, the
@@ -15055,6 +15121,88 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         7. Return response
         """
         source = event.source
+
+        # ── Sprint 1.0.6/1.0.6.1: V2 gateway adapter decision point ──
+        # All HERMES_RUNTIME_V2_* flags default to false → the decision is
+        # LEGACY and the legacy pipeline below runs UNCHANGED (zero extra
+        # DB writes, zero extra tool calls). The adapter opens no store and
+        # writes nothing while flags are false. Any adapter failure fails
+        # OPEN to legacy — this hook runs BEFORE any V2 side effect can
+        # exist, so it can never cause a duplicated action.
+        # Sprint 1.0.6.1: when ENABLED+SHADOW are live, an EXPLICIT
+        # eligible request (metadata runtime_v2_shadow=true — deny-by-
+        # default) additionally gets bounded shadow observation
+        # (shadow_event: ZERO tools, ZERO writes, ZERO user-visible
+        # output; hard 1s timeout; failures captured as
+        # gateway.v2.shadow.failed, never raised into legacy). CANARY
+        # branch stays inert (flag false in production).
+        _v2_decision = None
+        _v2_adapter = None
+        try:
+            from agent.gateway_v2.adapter import V2Decision, get_default_adapter
+            _v2_adapter = get_default_adapter()
+            _v2_decision = _v2_adapter.decide_event(event)
+        except Exception:
+            _v2_decision = None  # fail-open to legacy
+
+        if (_v2_decision is not None and _v2_decision is V2Decision.SHADOW
+                and _v2_adapter is not None):
+            try:
+                _v2_adapter.shadow_event(event, timeout=1.0)
+            except Exception:
+                logger.debug(
+                    "gateway.v2.shadow failed (never breaks legacy)",
+                    exc_info=True,
+                )
+
+        # Sprint 1.0.6.2 §19/§21-22: READ-ONLY CANARY — explicit-eligible
+        # internal requests only (deny-by-default; real platform events can
+        # never carry the opt-in metadata). V2 is the source of truth for
+        # a canary request: return the V2 response (exactly one). If the
+        # canary failed BEFORE any side effect, continue legacy; after
+        # TOOL_STARTED, legacy fallback is FORBIDDEN → controlled message.
+        if (_v2_decision is not None and _v2_decision is V2Decision.V2_CANARY
+                and _v2_adapter is not None):
+            _v2_canary = None
+            try:
+                _v2_canary = _v2_adapter.canary_event(event,
+                                                      allow_production=True)
+            except Exception:
+                _v2_canary = None
+            if _v2_canary and _v2_canary.get("ok") and _v2_canary.get("output_text"):
+                return _v2_canary["output_text"]  # exactly one response (V2)
+            if _v2_canary and not _v2_canary.get("fallback_allowed", True):
+                return _v2_canary.get("message") or \
+                    "request could not be completed (V2)"
+            # fallback_allowed → continue the legacy path unchanged below
+
+        # Sprint 1.1 §57 / 1.1.1 §7: INTENT ROUTER OBSERVE HOOK —
+        # non-authoritative. The gateway decision is ALREADY made above
+        # (or is legacy); this hook only *observes* the request through
+        # the intent router when it is enabled in observe mode. It NEVER
+        # changes the route, writes nothing, calls no tools, and fails
+        # OPEN to legacy on any error (env flags default false → hook
+        # is inert, zero overhead).
+        try:
+            from agent.intent_router.gateway_hook import (
+                actual_route_from_v2,
+                observe_gateway_event,
+            )
+
+            observe_gateway_event(
+                event.text or "",
+                request_id=getattr(event, "id", None) or "gateway",
+                actual_route=actual_route_from_v2(
+                    _v2_decision,
+                    internal=bool(getattr(event, "internal", False)),
+                ),
+                sample_source="LIVE",
+            )
+        except Exception:
+            logger.debug(
+                "gateway.intent_router.observe failed (never breaks legacy)",
+                exc_info=True,
+            )
 
         # 🔴 Cross-session leak guard. This handler runs inside a per-message
         # asyncio task created via create_task(), which snapshots the spawning

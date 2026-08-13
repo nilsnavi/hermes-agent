@@ -6206,6 +6206,24 @@ class APIServerAdapter(BasePlatformAdapter):
                     if agent_ref is not None:
                         agent_ref[0] = agent
                     effective_task_id = session_id or str(uuid.uuid4())
+                    # Sprint 1.1.1 §7: INTENT ROUTER OBSERVE HOOK —
+                    # non-authoritative. The API server path creates its own
+                    # AIAgent (it does not flow through _handle_message), so
+                    # observe here too: flags default off → inert; any router
+                    # failure fails open and never touches the run.
+                    try:
+                        from agent.intent_router.gateway_hook import (
+                            observe_gateway_event,
+                        )
+
+                        observe_gateway_event(
+                            str(user_message or ""),
+                            request_id=effective_task_id,
+                            actual_route="LEGACY",
+                            sample_source="LIVE",
+                        )
+                    except Exception:
+                        pass
                     # Baseline for selective background-process reaping on
                     # SSE client disconnect — mirrors gateway/run.py's
                     # gateway-turn cleanup (#76115); this API-server surface

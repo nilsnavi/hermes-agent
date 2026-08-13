@@ -2997,6 +2997,19 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 apply_database_pragmas(self._conn, db_label="state.db")
                 self._conn.execute("PRAGMA foreign_keys=ON")
                 self._fts_cjk_loaded = load_fts5_cjk_extension(self._conn)
+                # Restrict state.db + WAL/SHM to the owner on every open:
+                # SQLite creates -wal/-shm with the process umask (often
+                # 0644), and multiple processes (gateway, CLI, cron) share
+                # the file, so a single unit UMask alone is not sufficient.
+                for _p in (
+                    self.db_path,
+                    Path(str(self.db_path) + "-wal"),
+                    Path(str(self.db_path) + "-shm"),
+                ):
+                    try:
+                        os.chmod(_p, 0o600)
+                    except FileNotFoundError:
+                        pass
                 self._init_schema()
 
             def _connect_and_init_with_lock_patience():

@@ -3814,6 +3814,34 @@ def run_job(
                 "default with `hermes model <name>`."
             )
 
+        # ── Sprint 0.6: scoped Model Router for profile-based scheduled
+        # jobs (§12–§13). Only when the scoped flag is on, the job carries a
+        # valid model_profile, and there is no explicit admin pin. The global
+        # flags / interactive chat path are never touched.
+        _use_model_profile_router = False
+        _routed_provider = None
+        _route_profile = (job.get("model_profile") or "").strip().upper()
+        if _route_profile in ("FAST", "BALANCED", "REASONING", "CODING"):
+            if not (job.get("provider") or "").strip() and not (job.get("model") or "").strip():
+                from cron.job_router import (
+                    JobRoutingError,
+                    profile_route_applies,
+                    route_job_profile,
+                    scheduled_router_enabled,
+                )
+
+                if scheduled_router_enabled() and profile_route_applies(job):
+                    try:
+                        _routed = route_job_profile(_route_profile, job)
+                        model = _routed["model"]
+                        _routed_provider = _routed["provider"]
+                        _use_model_profile_router = True
+                    except JobRoutingError as _route_err:
+                        raise RuntimeError(
+                            f"Cron job '{job_id}' model_profile='{_route_profile}' — "
+                            f"routing failure: {_route_err}"
+                        ) from _route_err
+
         # Apply IPv4 preference if configured.
         try:
             from hermes_constants import apply_ipv4_preference
@@ -3961,7 +3989,7 @@ def run_job(
                 # Per-job user pin wins; otherwise the cron-fleet default
                 # provider (cron.model_provider); otherwise resolve from
                 # persisted global config.
-                "requested": job.get("provider") or _cron_default_provider or None,
+                "requested": _routed_provider if _use_model_profile_router else (job.get("provider") or _cron_default_provider or None),
                 # Derive provider-specific api_mode from the model this job
                 # will actually run (per-job pin > env > config default), not
                 # the stale persisted default — mirrors the fallback path
@@ -4064,7 +4092,7 @@ def run_job(
                 _snapshot = str(job.get(f"{_axis}_snapshot") or "").strip().lower()
                 _current = _current_provider if _axis == "provider" else _current_model
                 _drift.append(f"{_axis} '{_snapshot}' -> '{_current}'")
-            if _drift:
+            if _drift and not _use_model_profile_router:
                 _changes = "; ".join(_drift)
                 logger.warning(
                     "Job '%s': SKIPPED — global inference config drifted since "
@@ -4084,7 +4112,17 @@ def run_job(
                     f"(or pin the original values to keep them). See #44585."
                 )
 
-        fallback_model = get_fallback_chain(_cfg) or None
+        if _use_model_profile_router:
+            logger.info(
+                "Job '%s': model_profile=%s — Model Router selected %s/%s "
+                "(drift guard bypassed: snapshot is diagnostic for profile-based jobs)",
+                job_id, _route_profile, _routed_provider, model,
+            )
+
+        # Sprint 0.6 §27: routed jobs never carry the legacy fallback chain —
+        # the Router already chose an eligible provider; a broken fallback
+        # (e.g. claudehub AUTH_INVALID) must not be reachable.
+        fallback_model = None if _use_model_profile_router else (get_fallback_chain(_cfg) or None)
         credential_pool = None
         runtime_provider = str(runtime.get("provider") or "").strip().lower()
         if runtime_provider:

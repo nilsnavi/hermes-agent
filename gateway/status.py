@@ -1017,6 +1017,26 @@ def write_runtime_status(
         # coverage without a second probe.
         payload["served_profiles"] = list(served_profiles or [])
 
+    # Sprint 1.0.6 §40: safe V2 feature-flag visibility in the runtime
+    # status record. Booleans only — never DB paths or secrets. Lazy import
+    # + fail-closed: any V2-package problem degrades to the key being absent
+    # (payload identical to the pre-adapter record). With all flags false the
+    # adapter reports schema_ready=False WITHOUT opening any SQLite file —
+    # the status record is written on lifecycle events, never per message.
+    try:
+        from agent.gateway_v2.adapter import get_default_adapter as _v2_get_default_adapter
+        _v2_health = _v2_get_default_adapter().health(
+            db_path=str(Path(get_hermes_home()) / "state.db")
+        )
+        _v2_block = (_v2_health or {}).get("runtime_v2")
+        if isinstance(_v2_block, dict):
+            payload["runtime_v2"] = {
+                key: bool(_v2_block.get(key))
+                for key in ("enabled", "shadow", "canary", "persistence", "schema_ready")
+            }
+    except Exception:
+        pass  # runtime_v2 stays absent — record matches the pre-adapter shape
+
     if platform is not _UNSET:
         platform_payload = payload["platforms"].get(platform, {})
         if platform_state is not _UNSET:

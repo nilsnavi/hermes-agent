@@ -1,0 +1,29 @@
+"""Orchestrator event types (Sprint 1.0.5).
+
+Event OBJECTS are the existing :class:`agent.runtime.events.RuntimeEvent` —
+one uniform stream in ``agent_v2_events``. Low-level STEP/TOOL events are
+NOT duplicated here (they come from the execution engine); these are the
+orchestration-level lifecycle markers only.
+"""
+
+ORCHESTRATION_STARTED = "ORCHESTRATION_STARTED"
+ORCHESTRATION_STOPPED = "ORCHESTRATION_STOPPED"
+ORCHESTRATION_RESUMED = "ORCHESTRATION_RESUMED"
+BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
+REPLAN_REQUESTED = "REPLAN_REQUESTED"
+REPLAN_SKIPPED = "REPLAN_SKIPPED"
+DUPLICATE_ACTION_DETECTED = "DUPLICATE_ACTION_DETECTED"
+CANCELLATION_REQUESTED = "CANCELLATION_REQUESTED"
+
+ORCHESTRATOR_EVENT_TYPES = frozenset(
+    {
+        ORCHESTRATION_STARTED,
+        ORCHESTRATION_STOPPED,
+        ORCHESTRATION_RESUMED,
+        BUDGET_EXCEEDED,
+        REPLAN_REQUESTED,
+        REPLAN_SKIPPED,
+        DUPLICATE_ACTION_DETECTED,
+        CANCELLATION_REQUESTED,
+    }
+)

@@ -307,3 +307,101 @@ def test_bypass_marker_disables_guard():
     # so we get the real os.kill. Calling os.kill(os.getpid(), 0) just
     # checks that the PID exists — harmless.
     os.kill(os.getpid(), 0)  # No exception — guard is OFF.
+
+
+# ──────────────────── binary-identity classification (Sprint 0.11 §18) ─────
+#
+# The pre-0.11 guard substring-matched the WHOLE command string, so a real
+# skill command that merely CARRIES a dangerous-looking TOKEN in its
+# arguments was falsely blocked (e.g. `rg skill hermes-gateway docs` —
+# "skill" is a killer-binary name; `grep systemctl restart hermes-gateway f`
+# — the systemctl text is a search pattern, not an invocation). Policy must
+# be applied to the RESOLVED executable (binary identity), never to
+# arbitrary argument content. The guard runs before exec, so a missing
+# binary (FileNotFoundError) still proves the guard let it through.
+
+
+def _assert_guard_does_not_block(argv):
+    """Run *argv* under the live-system guard and fail if it is blocked."""
+    try:
+        subprocess.run(argv, capture_output=True, timeout=15)
+    except FileNotFoundError:
+        pass  # binary absent — the guard must not have raised either
+    except RuntimeError as exc:
+        if "live-system guard" in str(exc):
+            pytest.fail(f"live-system guard falsely blocked {argv!r}: {exc}")
+        raise
+
+
+def test_rg_with_killer_token_argument_not_blocked():
+    """`rg skill hermes-gateway docs` — binary is rg; 'skill' is only an
+    argument (and a killer-binary name). Must NOT be blocked."""
+    _assert_guard_does_not_block(["rg", "skill", "hermes-gateway", "docs"])
+
+
+def test_rg_with_systemctl_text_argument_not_blocked():
+    """`rg systemctl restart hermes-gateway f` — binary is rg; the
+    systemctl text is a search pattern. Must NOT be blocked."""
+    _assert_guard_does_not_block(
+        ["rg", "systemctl", "restart", "hermes-gateway", "f"]
+    )
+
+
+def test_rg_with_hermes_update_text_argument_not_blocked():
+    """`rg "hermes update" docs` — binary is rg. Must NOT be blocked."""
+    _assert_guard_does_not_block(["rg", "hermes", "update", "docs"])
+
+
+def test_grep_with_token_argument_not_blocked():
+    """`grep TOKEN file.txt` — binary is grep. Must NOT be blocked."""
+    _assert_guard_does_not_block(["grep", "TOKEN", "file.txt"])
+
+
+def test_python_script_with_token_argument_not_blocked():
+    """`python script.py TOKEN` — binary is python; TOKEN is an argument.
+    Must NOT be blocked."""
+    import sys as _sys
+
+    _assert_guard_does_not_block([_sys.executable, "-c", "pass", "TOKEN"])
+
+
+def test_echo_with_token_argument_not_blocked():
+    """`echo TOKEN` — binary is echo, nothing executes. Must NOT be blocked."""
+    _assert_guard_does_not_block(["echo", "TOKEN"])
+
+
+def test_echo_systemctl_text_not_blocked():
+    """`echo systemctl restart hermes-gateway` prints text — must NOT be
+    blocked (mirror of the approval echo-passthrough rule)."""
+    _assert_guard_does_not_block(
+        ["echo", "systemctl", "restart", "hermes-gateway"]
+    )
+
+
+def test_real_systemctl_mutation_still_blocked():
+    """Dangerous actual binaries must STILL be blocked after the identity
+    refactor — systemctl restart hermes-gateway through a wrapper."""
+    with pytest.raises(RuntimeError, match="live-system guard"):
+        subprocess.run(
+            ["env", "-i", "systemctl", "--user", "restart", "hermes-gateway"],
+            capture_output=True,
+            timeout=15,
+        )
+
+
+def test_real_pkill_hermes_still_blocked():
+    """Dangerous actual killer binary targeting hermes must STILL be blocked."""
+    with pytest.raises(RuntimeError, match="live-system guard"):
+        subprocess.run(
+            ["pkill", "-f", "hermes-gateway"], capture_output=True, timeout=15
+        )
+
+
+def test_bash_c_payload_systemctl_still_blocked():
+    """bash -c with a real systemctl mutation inside must STILL be blocked."""
+    with pytest.raises(RuntimeError, match="live-system guard"):
+        subprocess.run(
+            ["bash", "-c", "systemctl --user restart hermes-gateway"],
+            capture_output=True,
+            timeout=15,
+        )

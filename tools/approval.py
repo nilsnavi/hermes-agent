@@ -2239,6 +2239,41 @@ def _command_detection_variants(command: str):
         yield variant
 
 
+_ECHO_PASSTHROUGH_RE = re.compile(
+    r"^\s*(?:echo|printf)\b(?:\s+-[A-Za-z0-9]*)?\s*(.*)$", re.DOTALL
+)
+# Shell constructs that force execution of (or piped re-interpretation of)
+# the remaining text. If any is present, the passthrough exemption must NOT
+# apply — `echo find -delete | xargs find` executes find, and
+# `echo "$(find . -delete)"` executes find via command substitution.
+_ECHO_PASSTHROUGH_EXEC_RE = re.compile(r"[\n;&|<>`]|\$\(|\beval\b|\bsource\b")
+
+
+def _is_echo_passthrough(command: str) -> bool:
+    """True when the dangerous-looking text is a literal argument of a
+    non-executing passthrough command (echo / printf) with NO shell execution
+    mechanism anywhere in the line.
+
+    Live-system guard (Sprint 0.11 §9): `echo "find -delete"` or
+    `echo "sudo -s"` used to trip the approval pipeline even though nothing
+    is executed — the pattern matched the argument *text* instead of the
+    invoked binary. Guarding on the first token alone would be a bypass
+    (`echo find -delete | xargs find` DOES delete); requiring the whole
+    line to be free of pipes, redirects, separators, command substitution
+    and eval/source keeps the real threats flagged while silencing the
+    false positive.
+    """
+    if not command.lstrip().startswith(("echo", "printf")):
+        return False
+    m = _ECHO_PASSTHROUGH_RE.match(command)
+    if not m:
+        return False
+    rest = m.group(1)
+    if not rest.strip():
+        return False
+    return _ECHO_PASSTHROUGH_EXEC_RE.search(rest) is None
+
+
 def _is_verification_artifact_cleanup(command: str) -> bool:
     """Return whether *command* only removes one Hermes ad-hoc temp script."""
     try:
@@ -2275,6 +2310,11 @@ def detect_dangerous_command(command: str) -> tuple:
         command_lower = command_variant.lower()
         for pattern_re, description in DANGEROUS_PATTERNS_COMPILED:
             if pattern_re.search(command_lower):
+                if _is_echo_passthrough(command_variant):
+                    # Live-system guard: the matched text is only a literal
+                    # argument of echo/printf — no execution happens here,
+                    # and the line is free of any shell execution mechanism.
+                    break
                 pattern_key = description
                 return (True, pattern_key, description)
     normalized = _normalize_command_for_detection(command)
