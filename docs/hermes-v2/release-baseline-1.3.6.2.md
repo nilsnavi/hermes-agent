@@ -79,3 +79,30 @@ release snapshot.
 НЕ запушено (ожидает явной команды). Команды:
 `git push origin main`
 `git push origin hermes-v2-pre-prod-canary-1.3.6.2`
+
+## UPSTREAM DIVERGENCE AT CANARY CUT (Sprint 1.3.6.4.1)
+
+- Certified baseline SHA: `8dfe9b3c82475e42e82e82fd1071991ad6e395ff`
+- origin/main SHA on cut: `8505559fa94e35f09f17fd29c228b74fb4acdda1` (на момент 1.3.6.4;
+  upstream продолжал двигаться: `4bdddf4e9…` на 1.3.6.4.1 pre-flight)
+- merge-base: `a4f468e83`; ahead=2; behind=1612 (на момент 1.3.6.4)
+- Timestamp: 2026-08-18
+
+**Sprint 1.3.7 intentionally branches from the certified baseline,
+NOT from current origin/main.**
+
+Причина: rebase/merge 1612 upstream commits инвалидировал бы certification
+evidence (NEW_REGRESSIONS=0, 1033/1033 targeted, canonical raw result,
+release snapshot 538/538).
+
+## IMPORTANT FUTURE RULE (Sprint 1.3.6.4.1 §12)
+
+Upstream synchronization после 1.3.7 — ОТДЕЛЬНЫЙ спринт. Автоматический
+перенос 1612 commits в canary runtime запрещён. Будущий процесс:
+
+1. new upstream integration branch
+2. merge/rebase/cherry strategy review
+3. full certification
+4. new baseline
+
+НЕ сейчас. origin/main остаётся READ-ONLY для этого спринта.
