@@ -1,18 +1,182 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-08-16T18:57:18+03:00",
-  "generator": "hermes-agent sprint 1.3.6 final impact audit",
+  "generated_at": "2026-08-18T16:36:49+03:00",
+  "generator": "hermes-agent sprint 1.3.8.1 baseline consolidation",
   "architecture": {
-    "execution_pipeline": ["IntentRouter", "CapabilityRouter", "CapabilityPolicyEngine", "ExecutionRequest", "VerifiedToolExecutor", "SystemBoundary", "ToolAdapter", "ExecutionResult"],
-    "sandbox_mutation_pipeline": ["SandboxMutationRequest", "SandboxBoundaryBridge", "DurablePlan", "Preflight", "Approval", "AuthenticatedSnapshot", "CompositeResourceLock", "SandboxAdapter", "VerificationReceipt", "HealthReceipt", "AtomicCommitOrRollbackReceipt"],
-    "recovery_pipeline": ["AppendOnlyTransactionJournal", "BoundedReadOnlyScanner", "DurableEvidenceValidator", "ReadOnlyReconciliation", "RecoveryDisposition", "RedactedManualReview"],
-    "chaos_pipeline": ["DefaultOffChaosController", "55FaultPoints", "PhaseSpecificProcessDeathC1C10", "PartialMutationMatrix", "RollbackFailureR1R10", "TimeoutMatrix", "ConcurrencyMatrix", "SandboxTestServiceChaos"]
+    "execution_pipeline": [
+      "IntentRouter",
+      "CapabilityRouter",
+      "CapabilityPolicyEngine",
+      "ExecutionRequest",
+      "VerifiedToolExecutor",
+      "SystemBoundary",
+      "ToolAdapter",
+      "ExecutionResult"
+    ],
+    "sandbox_mutation_pipeline": [
+      "SandboxMutationRequest",
+      "SandboxBoundaryBridge",
+      "DurablePlan",
+      "Preflight",
+      "Approval",
+      "AuthenticatedSnapshot",
+      "CompositeResourceLock",
+      "SandboxAdapter",
+      "VerificationReceipt",
+      "HealthReceipt",
+      "AtomicCommitOrRollbackReceipt"
+    ],
+    "recovery_pipeline": [
+      "AppendOnlyTransactionJournal",
+      "BoundedReadOnlyScanner",
+      "DurableEvidenceValidator",
+      "ReadOnlyReconciliation",
+      "RecoveryDisposition",
+      "RedactedManualReview"
+    ],
+    "chaos_pipeline": [
+      "DefaultOffChaosController",
+      "55FaultPoints",
+      "PhaseSpecificProcessDeathC1C10",
+      "PartialMutationMatrix",
+      "RollbackFailureR1R10",
+      "TimeoutMatrix",
+      "ConcurrencyMatrix",
+      "SandboxTestServiceChaos"
+    ],
+    "limited_production_mutation_pipeline": [
+      "IntentRouter",
+      "CapabilityRouter",
+      "CapabilityPolicyEngine",
+      "VerifiedToolExecutor",
+      "SystemBoundaryLayer",
+      "TransactionalChangePipeline",
+      "LimitedProductionMutationPolicy",
+      "ResourceProfile",
+      "AtomicWrite",
+      "Verify",
+      "Health",
+      "Rollback"
+    ]
   },
   "modules": {
-    "agent/capability_router/": {"role": "capability resolution + policy engine (sole policy authority)", "callers": ["agent/intent_router/"], "tests": ["tests/intent_router/test_capability_*.py"]},
-    "agent/verified_tool_executor/": {"role": "sole verified execution gateway for canonical read tools", "callers": ["agent/gateway_v2/", "agent/intent_router/enforcement.py"], "tests": ["tests/verified_tool_executor/"]},
-    "agent/system_boundary/": {"role": "fail-closed System Boundary Layer", "callers": ["agent/verified_tool_executor/executor.py", "agent/sandbox_runtime/sandbox_boundary.py"], "tests": ["tests/system_boundary/"], "boundary_edges": {"preflight": "request + descriptor -> SystemPreflightPlan", "authorize": "request + descriptor + preflight -> BoundaryDecision", "verify_before_execute": "TOCTOU / expiry / replay revalidation", "verify_after_execute": "post-execution verification"}},
-    "agent/sandbox_runtime/": {"role": "standalone sandbox-only mutation, durable recovery and deterministic chaos hardening; production SYSTEM_CONTROL disabled", "callers": ["python -m agent.sandbox_runtime.cli", "tests/sandbox_runtime/", "explicit sandbox subprocess only; no production call-sites"], "affects": ["~/.hermes/sandbox/system-mutation only", ".txn append-only journal", ".snapshots", ".locks", ".recovery/manual-reviews.jsonl", "sandbox test subprocess/process groups"], "key_modules": ["pipeline.py", "transaction.py", "recovery.py", "reconciliation.py", "snapshot.py", "lock.py", "manual_review.py", "chaos.py", "chaos_drills.py", "service.py"], "tests": ["tests/sandbox_runtime/test_*.py", "29 files / 341 tests"]},
-    "agent/gateway_v2/": {"role": "production V2 adapters for STATUS_READ and SEARCH_READ", "callers": ["gateway/run.py", "gateway/platforms/api_server.py"], "tests": ["tests/gateway_v2/"], "sandbox_runtime_dependency": false}
+    "agent/capability_router/": {
+      "role": "capability resolution + policy engine (sole policy authority)",
+      "callers": [
+        "agent/intent_router/"
+      ],
+      "tests": [
+        "tests/intent_router/test_capability_*.py"
+      ]
+    },
+    "agent/verified_tool_executor/": {
+      "role": "sole verified execution gateway for canonical read tools",
+      "callers": [
+        "agent/gateway_v2/",
+        "agent/intent_router/enforcement.py"
+      ],
+      "tests": [
+        "tests/verified_tool_executor/"
+      ]
+    },
+    "agent/system_boundary/": {
+      "role": "fail-closed System Boundary Layer",
+      "callers": [
+        "agent/verified_tool_executor/executor.py",
+        "agent/sandbox_runtime/sandbox_boundary.py"
+      ],
+      "tests": [
+        "tests/system_boundary/"
+      ],
+      "boundary_edges": {
+        "preflight": "request + descriptor -> SystemPreflightPlan",
+        "authorize": "request + descriptor + preflight -> BoundaryDecision",
+        "verify_before_execute": "TOCTOU / expiry / replay revalidation",
+        "verify_after_execute": "post-execution verification"
+      }
+    },
+    "agent/sandbox_runtime/": {
+      "role": "standalone sandbox-only mutation, durable recovery and deterministic chaos hardening; production SYSTEM_CONTROL disabled",
+      "callers": [
+        "python -m agent.sandbox_runtime.cli",
+        "tests/sandbox_runtime/",
+        "explicit sandbox subprocess only; no production call-sites"
+      ],
+      "affects": [
+        "~/.hermes/sandbox/system-mutation only",
+        ".txn append-only journal",
+        ".snapshots",
+        ".locks",
+        ".recovery/manual-reviews.jsonl",
+        "sandbox test subprocess/process groups"
+      ],
+      "key_modules": [
+        "pipeline.py",
+        "transaction.py",
+        "recovery.py",
+        "reconciliation.py",
+        "snapshot.py",
+        "lock.py",
+        "manual_review.py",
+        "chaos.py",
+        "chaos_drills.py",
+        "service.py"
+      ],
+      "tests": [
+        "tests/sandbox_runtime/test_*.py",
+        "29 files / 341 tests"
+      ]
+    },
+    "agent/gateway_v2/": {
+      "role": "production V2 adapters for STATUS_READ and SEARCH_READ",
+      "callers": [
+        "gateway/run.py",
+        "gateway/platforms/api_server.py"
+      ],
+      "tests": [
+        "tests/gateway_v2/"
+      ],
+      "sandbox_runtime_dependency": false
+    },
+    "agent/production_canary/": {
+      "role": "Sprint 1.3.7 narrow production-mutation canary (single capability HERMES_MANAGED_CANARY_FILE_UPDATE); reused by production_policy for atomic/lock/snapshot",
+      "callers": [
+        "agent/production_policy/runtime.py"
+      ],
+      "tests": [
+        "tests/production_canary/"
+      ],
+      "key_modules": [
+        "pipeline.py",
+        "atomic_write.py",
+        "lock.py",
+        "preflight.py",
+        "verify.py",
+        "health.py",
+        "rollback.py",
+        "deny.py",
+        "approval.py",
+        "schema.py",
+        "flags.py"
+      ]
+    },
+    "agent/production_policy/": {
+      "role": "Sprint 1.3.8 Limited Production Mutation Policy: immutable resource profiles, exact target registry, typed operations, durable budget, failure circuit breaker, consumer/blast-radius gates",
+      "callers": [
+        "agent/production_canary/runtime.py"
+      ],
+      "tests": [
+        "tests/production_policy/"
+      ],
+      "key_modules": [
+        "policy.py",
+        "models.py",
+        "budget.py",
+        "risk.py",
+        "flags.py",
+        "runtime.py",
+        "cli.py"
+      ]
+    }
   }
 }
