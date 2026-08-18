@@ -30,6 +30,20 @@
 # separator required. The explicit '--' form still works and stacks with
 # bare flags. Positional path arguments override the default discovery
 # root (tests/).
+#
+# EXIT CODE CONTRACT (Sprint 1.3.6.2):
+#   This script exits with the runner's raw status:
+#     0  = zero test failures
+#     1+ = any test failure, collection/import error, timeout, or runner
+#          internal error (pytest failures are NEVER laundered to exit 0).
+#   The LAST line of output is always `TEST_RUNNER_EXIT_CODE=<n>` — a
+#   machine-readable marker that survives `| tee log` pipelines (a shell
+#   pipeline aggregates to the LAST command's status, so `tee` would
+#   otherwise mask a failure as 0). Automation must either grep that line,
+#   use `set -o pipefail`, or read `${PIPESTATUS[0]}`:
+#       bash scripts/run_tests.sh | tee run.log          # pipeline exit = tee's 0
+#       set -o pipefail; bash scripts/run_tests.sh | tee run.log  # -> non-zero
+#       bash scripts/run_tests.sh | tee run.log; exit ${PIPESTATUS[0]}  # explicit
 
 set -euo pipefail
 
@@ -166,7 +180,8 @@ echo "▶ pre-compiling bytecode cache"
 "$PYTHON" -m compileall -q -j 0 -- $(git ls-files '*.py') >/dev/null 2>&1 || true
 
 echo "▶ launching test runner"
-exec env -i \
+_rc=0
+env -i \
   PATH="$PATH" \
   HOME="$HOME" \
   ${WIN_ENV[@]+"${WIN_ENV[@]}"} \
@@ -180,4 +195,9 @@ exec env -i \
   ${HERMES_E2E_BROWSER:+HERMES_E2E_BROWSER="$HERMES_E2E_BROWSER"} \
   ${EXTRA_PYTHONPATH:+PYTHONPATH="$EXTRA_PYTHONPATH"} \
   ${EXTRA_PYTEST_PLUGINS:+PYTEST_PLUGINS="$EXTRA_PYTEST_PLUGINS"} \
-  "$PYTHON" "$SCRIPT_DIR/run_tests_parallel.py" "$@"
+  "$PYTHON" "$SCRIPT_DIR/run_tests_parallel.py" "$@" || _rc=$?
+# Machine-readable exit marker (see EXIT CODE CONTRACT in the header):
+# `run_tests.sh | tee log` aggregates to tee's status, so the runner's real
+# code must also be emitted into the output stream itself.
+echo "TEST_RUNNER_EXIT_CODE=$_rc"
+exit "$_rc"

@@ -1,0 +1,26 @@
+# Codemap lock (Sprint 1.3.6 final)
+# Generated: 2026-08-16T18:57:18+03:00
+# Modules under lock: agent/capability_router, agent/verified_tool_executor,
+# agent/system_boundary, agent/sandbox_runtime, agent/gateway_v2
+# Regenerate together: codemap.html + codemap.json + codemap.lock
+
+schema_version=2
+codemap_json_sha256=7b2b873b54b8e48294fa63a91c93043f381cfad55587bc1058d9b902a7f94785
+codemap_html_sha256=8e88d353490cef0d465122df7a27e1b612d25e3fefd55d10bbacbb17b3c6ed8c
+architecture:
+  IntentRouter -> CapabilityRouter -> CapabilityPolicyEngine
+  -> ExecutionRequest -> VerifiedToolExecutor -> SystemBoundary
+  -> ToolAdapter -> ExecutionResult
+sandbox:
+  Request -> BoundaryBridge -> DurablePlan -> Preflight -> Approval
+  -> AuthenticatedSnapshot -> CompositeLock -> SandboxAdapter
+  -> ExecutionReceipt -> VerificationReceipt -> HealthReceipt
+  -> AtomicCommitOrRollbackReceipt
+recovery:
+  AppendOnlyJournal -> BoundedReadOnlyScanner -> DurableEvidenceValidator
+  -> ReadOnlyReconciliation -> RecoveryDisposition -> RedactedManualReview
+chaos:
+  DefaultOffController -> 55FaultPoints -> C1-C10 -> R1-R10
+  -> PartialMutation -> Timeout -> Concurrency -> SandboxTestService
+production_callsite_to_sandbox_runtime=none
+production_system_control=disabled
