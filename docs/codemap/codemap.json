@@ -72,9 +72,30 @@
       "Health",
       "Rollback",
       "SHADOW ONLY"
-    ]
+    ],
+    "service_reload_canary_pipeline": {
+      "chain": [
+        "service_foundation",
+        "reload_canary_policy",
+        "service_reload_plan",
+        "exact_reload_executor",
+        "verify",
+        "stabilization_health",
+        "commit"
+      ],
+      "deny_branches": [
+        "restart",
+        "stop",
+        "start",
+        "kill",
+        "signal",
+        "generic_service_control",
+        "gateway->self_control_forbidden"
+      ],
+      "execution": "RELOAD only; one registered Hermes aux service"
+    }
   },
-  "generated_at": "2026-08-18T17:58:04.283033+03:00",
+  "generated_at": "2026-08-18T20:01:57.733941+03:00",
   "generator": "hermes-agent sprint 1.3.8.1 baseline consolidation",
   "modules": {
     "agent/capability_router/": {
@@ -188,6 +209,24 @@
       "role": "analysis/shadow service mutation foundation (SHADOW ONLY, no execution)",
       "tests": [
         "tests/service_foundation/"
+      ]
+    },
+    "agent/service_reload_canary/": {
+      "callers": [
+        "agent/service_foundation"
+      ],
+      "key_modules": [
+        "allowlist",
+        "pipeline",
+        "executor",
+        "policy",
+        "budget",
+        "models"
+      ],
+      "role": "Single aux service RELOAD canary (shadow/live, exact allowlist)",
+      "shadows_production_mutation": true,
+      "tests": [
+        "tests/service_reload_canary/"
       ]
     },
     "agent/system_boundary/": {
