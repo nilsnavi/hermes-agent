@@ -93,10 +93,44 @@
         "gateway->self_control_forbidden"
       ],
       "execution": "RELOAD only; one registered Hermes aux service"
+    },
+    "service_reload_policy_pipeline": {
+      "chain": [
+        "ServiceFoundation",
+        "ServiceReloadPolicy",
+        "Admission",
+        "Approval",
+        "Lock",
+        "Budget",
+        "ExactReloadExecutor",
+        "Verify",
+        "StabilizationHealth",
+        "Commit"
+      ],
+      "deny_branches": [
+        "restart",
+        "stop",
+        "start",
+        "kill",
+        "signal",
+        "gateway",
+        "unregistered_service",
+        "unknown_outcome_retry"
+      ],
+      "key_modules": [
+        "ServiceReloadPolicy",
+        "ReloadRegistry",
+        "ReloadAdmissionGate",
+        "ReloadBudget",
+        "ReloadCircuitBreaker",
+        "DurableServiceLock",
+        "ReloadIdempotencyStore"
+      ],
+      "execution": "RELOAD only; exact registered Hermes auxiliary services; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED"
     }
   },
-  "generated_at": "2026-08-18T20:01:57.733941+03:00",
-  "generator": "hermes-agent sprint 1.3.8.1 baseline consolidation",
+  "generated_at": "2026-08-19T00:00:00+03:00",
+  "generator": "hermes-agent sprint 1.3.11.1 baseline consolidation",
   "modules": {
     "agent/capability_router/": {
       "callers": [
@@ -227,6 +261,31 @@
       "shadows_production_mutation": true,
       "tests": [
         "tests/service_reload_canary/"
+      ]
+    },
+    "agent/service_reload_policy/": {
+      "affects": [
+        "~/.hermes/managed/canary-service/policy-store/* (RUNTIME_STATE, not source)"
+      ],
+      "callers": [
+        "agent/service_foundation",
+        "scripts/service_reload_policy_live.py",
+        "scripts/service_reload_policy_rehearsal.py"
+      ],
+      "key_modules": [
+        "policy.py (ServiceReloadPolicy decision engine, fail-closed)",
+        "registry.py (ReloadRegistry + ReloadAdmissionGate, static, MAX_REGISTERED=3)",
+        "budget.py (ReloadBudget, durable global 8 att/h / 5 succ/h)",
+        "breaker.py (ReloadCircuitBreaker + KillSwitch, durable)",
+        "lock.py (DurableServiceLock, cross-process, owner/nonce/TTL)",
+        "idempotency.py (ReloadIdempotencyStore, durable semantic-key replay)",
+        "pipeline.py (ReloadTransaction orchestration)",
+        "models.py, flags.py, exceptions.py"
+      ],
+      "role": "Sprint 1.3.11 Limited Service Reload Policy baseline: reload-only authority for exact registered Hermes auxiliary services; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED; restart/stop/start/kill/gateway denied",
+      "shadows_production_mutation": true,
+      "tests": [
+        "tests/service_reload_policy/"
       ]
     },
     "agent/system_boundary/": {
