@@ -127,10 +127,47 @@
         "ReloadIdempotencyStore"
       ],
       "execution": "RELOAD only; exact registered Hermes auxiliary services; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED"
+    },
+    "service_restart_foundation_pipeline": {
+      "chain": [
+        "ServiceFoundation",
+        "LimitedServiceReloadPolicy",
+        "RestartFoundation",
+        "RestartEligibility",
+        "RestartPlan",
+        "PIDTransitionModel",
+        "QuiescenceCheck",
+        "StartupContract",
+        "HealthContract",
+        "RollbackRecoveryPlan",
+        "SHADOW / FAKE ONLY"
+      ],
+      "deny_branches": [
+        "restart",
+        "stop",
+        "start",
+        "kill",
+        "signal",
+        "generic_service_control",
+        "gateway->self_control_forbidden",
+        "restart_as_rollback_retry"
+      ],
+      "execution": "RESTART always SERVICE_RESTART_DISABLED (adapter_calls=0); SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED",
+      "key_modules": [
+        "RestartProfile",
+        "RestartEligibility",
+        "ServiceRestartPlan",
+        "PIDTransitionModel",
+        "QuiescenceGate",
+        "OrphanDetector",
+        "PortTransition",
+        "RollbackStrategy",
+        "RestartExecutionGuard"
+      ]
     }
   },
   "generated_at": "2026-08-19T00:00:00+03:00",
-  "generator": "hermes-agent sprint 1.3.11.1 baseline consolidation",
+  "generator": "hermes-agent sprint 1.3.12 controlled restart foundation",
   "modules": {
     "agent/capability_router/": {
       "callers": [
@@ -243,6 +280,33 @@
       "role": "analysis/shadow service mutation foundation (SHADOW ONLY, no execution)",
       "tests": [
         "tests/service_foundation/"
+      ]
+    },
+    "agent/service_restart_foundation/": {
+      "callers": [
+        "agent/service_foundation"
+      ],
+      "key_modules": [
+        "models.py (RestartProfile, ProcessIdentity, RestartTransition)",
+        "eligibility.py (RestartEligibility, strict fail-closed precedence)",
+        "pid_transition.py (PIDTransitionModel + process-start identity)",
+        "quiescence.py + orphans.py (QuiescenceGate + orphan detection P0)",
+        "ports.py (port transition model)",
+        "stop_contract.py / start_contract.py / identity_after_start.py",
+        "dependencies.py / blast_radius.py / risk.py (dependency quiescence, blast, monotonicity)",
+        "plan.py (ServiceRestartPlan, immutable + revalidation)",
+        "guard.py (P0 execution guard: execute -> SERVICE_RESTART_DISABLED, adapter_calls=0)",
+        "gateway.py (SELF_CONTROL_FORBIDDEN)",
+        "unknown_outcome.py / recovery.py / rollback.py (no auto-retry; restart-as-rollback denied)",
+        "approval.py / budget.py / circuit_breaker.py (foundations, shadow tests only)",
+        "shadow.py / chaos.py (>=100 each)",
+        "events.py / telemetry.py / flags.py / cli.py (analysis-only CLI)"
+      ],
+      "role": "Sprint 1.3.12 Controlled Auxiliary Service Restart Foundation: models and rehearses restart semantics (PID transition, quiescence, orphans, ports, stop/start contracts, post-start identity, blast, risk, rollback, recovery) in SHADOW/FAKE ONLY; production restart execution = 0",
+      "execution_enabled": false,
+      "shadows_production_mutation": true,
+      "tests": [
+        "tests/service_restart_foundation/"
       ]
     },
     "agent/service_reload_canary/": {

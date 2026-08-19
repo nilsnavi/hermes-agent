@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><title>Hermes Agent 2.0 Codemap — Sprint 1.3.11.1</title><script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script></head>
-<body><h1>Hermes Agent 2.0 — Codemap Sprint 1.3.11.1</h1><p>Generated: 2026-08-19T00:00:00+03:00. Production SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED.</p>
+<html lang="ru"><head><meta charset="utf-8"><title>Hermes Agent 2.0 Codemap — Sprint 1.3.12</title><script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script></head>
+<body><h1>Hermes Agent 2.0 — Codemap Sprint 1.3.12</h1><p>Generated: 2026-08-19T00:00:00+03:00. Production SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED.</p>
 <pre class="mermaid">
 flowchart LR
  IR[Intent Router] --> CR[Capability Router / Policy]
@@ -40,3 +40,11 @@ flowchart LR
 <p><strong>Deny branches (separate):</strong> restart · stop · start · kill/signal · gateway · unregistered service · unknown-outcome retry.</p>
 <p><strong>Authority:</strong> RELOAD only, exact registered Hermes auxiliary services. SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED. Restart/stop/start/kill: DENY. Kill-switch: ON.</p>
 </section>
+
+<section id="service-restart-foundation-1.3.12"><h2>Controlled Auxiliary Service Restart Foundation (1.3.12)</h2>
+<p>ServiceFoundation → <strong>RestartFoundation</strong> → RestartEligibility → RestartPlan → PIDTransitionModel → QuiescenceCheck → StartupContract → HealthContract → Rollback/RecoveryPlan → <strong>SHADOW / FAKE ONLY</strong>.</p>
+<p>Source: agent/service_restart_foundation/. Tests: tests/service_restart_foundation/.</p>
+<p><strong>Deny branches (separate):</strong> restart · stop · start · kill/signal · generic SERVICE_CONTROL · gateway (self_control_forbidden) · restart-as-rollback retry.</p>
+<p><strong>Authority:</strong> execution guard <code>RestartPlan.execute()</code> → <code>SERVICE_RESTART_DISABLED</code> (adapter_calls=0). Restart eligible != restart authorized. SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED. Kill-switch: ON. Restart execution (production): 0.</p>
+</section>
+

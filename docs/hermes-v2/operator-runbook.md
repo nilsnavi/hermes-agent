@@ -109,6 +109,13 @@ systemctl --user restart hermes-gateway.service
 Do NOT restart the gateway from inside the gateway process — SIGTERM
 propagates to child processes and kills the command mid-flight.
 
+> **Restart authority boundary (Sprint 1.3.12):** the gateway/system restart
+> above is an **external operator action**, never an agent-internal mutation.
+> The agent-side `service_restart_foundation` (Sprint 1.3.12) models restart
+> semantics in SHADOW/FAKE ONLY and always returns `SERVICE_RESTART_DISABLED`
+> with `adapter_calls=0`. The agent never restarts, stops or starts its own
+> gateway (`gateway_restart_capability` → `SELF_CONTROL_FORBIDDEN`).
+
 ## 10. Disable all V2
 
 ```bash

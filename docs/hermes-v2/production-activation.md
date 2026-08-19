@@ -13,6 +13,8 @@ Updated: Sprint 1.1.1
 | Intent Router | **ACTIVE — OBSERVE ONLY** (Sprint 1.1.1; zero routing authority) |
 | Approval Foundation | **ACTIVE** (operational layer) |
 | Operations Observability | **ACTIVE** |
+| Limited Service Reload | **RELOAD-ONLY** (Sprint 1.3.11; exact registered aux services) |
+| Service Restart Foundation | **SHADOW/FAKE ONLY** (Sprint 1.3.12; production execution = 0) |
 
 ## Feature flags (live)
 
