@@ -117,6 +117,7 @@
         "unregistered_service",
         "unknown_outcome_retry"
       ],
+      "execution": "RELOAD only; exact registered Hermes auxiliary services; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED",
       "key_modules": [
         "ServiceReloadPolicy",
         "ReloadRegistry",
@@ -125,8 +126,66 @@
         "ReloadCircuitBreaker",
         "DurableServiceLock",
         "ReloadIdempotencyStore"
+      ]
+    },
+    "service_restart_canary_pipeline": {
+      "chain": [
+        "RestartFoundation",
+        "RestartCanaryPolicy",
+        "Approval",
+        "Lock",
+        "Budget",
+        "ExactRestartExecutor",
+        "PID Transition",
+        "Quiescence",
+        "New Identity Verify",
+        "Stabilization Health",
+        "Commit"
       ],
-      "execution": "RELOAD only; exact registered Hermes auxiliary services; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED"
+      "deny_branches": [
+        "gateway",
+        "unregistered service",
+        "public stop",
+        "public start",
+        "kill/signal",
+        "second restart",
+        "restart-as-rollback",
+        "SYSTEM_CONTROL",
+        "generic SERVICE_CONTROL"
+      ],
+      "deny_paths": [
+        "gateway → SELF_CONTROL_FORBIDDEN",
+        "unregistered → NOT_REGISTERED",
+        "stop/start → OPERATION_DENIED",
+        "kill/signal → OPERATION_DENIED",
+        "replay/dup → DUPLICATE_ALREADY_COMMITTED",
+        "generic systemctl → unavailable"
+      ],
+      "description": "RestartFoundation → RestartCanaryPolicy → RestartPlan → ExactRestartExecutor → Verify → Stabilization → Commit",
+      "execution": "One historical committed restart of exact hermes-aux-canary.service; kill-switch ON; no further restart authorized",
+      "hard_gates": [
+        "kill-switch",
+        "budget(1/2)",
+        "circuit-breaker",
+        "durable-idempotency",
+        "durable-lock",
+        "single-use-approval",
+        "TTL"
+      ],
+      "key_modules": [
+        "ServiceRestartCanary",
+        "RestartCanaryPolicy",
+        "RestartAdmission",
+        "RestartApproval",
+        "RestartBudget",
+        "RestartBreaker",
+        "RestartLock",
+        "RestartIdempotency",
+        "RestartExecutor",
+        "RestartVerifier",
+        "RestartStabilization",
+        "RestartRecovery"
+      ]
     },
     "service_restart_foundation_pipeline": {
       "chain": [
@@ -166,8 +225,8 @@
       ]
     }
   },
-  "generated_at": "2026-08-19T00:00:00+03:00",
-  "generator": "hermes-agent sprint 1.3.12 controlled restart foundation",
+  "generated_at": "2026-08-21T11:58:59+03:00",
+  "generator": "hermes-agent Sprint 1.3.13.1 restart canary baseline consolidation",
   "modules": {
     "agent/capability_router/": {
       "callers": [
@@ -282,33 +341,6 @@
         "tests/service_foundation/"
       ]
     },
-    "agent/service_restart_foundation/": {
-      "callers": [
-        "agent/service_foundation"
-      ],
-      "key_modules": [
-        "models.py (RestartProfile, ProcessIdentity, RestartTransition)",
-        "eligibility.py (RestartEligibility, strict fail-closed precedence)",
-        "pid_transition.py (PIDTransitionModel + process-start identity)",
-        "quiescence.py + orphans.py (QuiescenceGate + orphan detection P0)",
-        "ports.py (port transition model)",
-        "stop_contract.py / start_contract.py / identity_after_start.py",
-        "dependencies.py / blast_radius.py / risk.py (dependency quiescence, blast, monotonicity)",
-        "plan.py (ServiceRestartPlan, immutable + revalidation)",
-        "guard.py (P0 execution guard: execute -> SERVICE_RESTART_DISABLED, adapter_calls=0)",
-        "gateway.py (SELF_CONTROL_FORBIDDEN)",
-        "unknown_outcome.py / recovery.py / rollback.py (no auto-retry; restart-as-rollback denied)",
-        "approval.py / budget.py / circuit_breaker.py (foundations, shadow tests only)",
-        "shadow.py / chaos.py (>=100 each)",
-        "events.py / telemetry.py / flags.py / cli.py (analysis-only CLI)"
-      ],
-      "role": "Sprint 1.3.12 Controlled Auxiliary Service Restart Foundation: models and rehearses restart semantics (PID transition, quiescence, orphans, ports, stop/start contracts, post-start identity, blast, risk, rollback, recovery) in SHADOW/FAKE ONLY; production restart execution = 0",
-      "execution_enabled": false,
-      "shadows_production_mutation": true,
-      "tests": [
-        "tests/service_restart_foundation/"
-      ]
-    },
     "agent/service_reload_canary/": {
       "callers": [
         "agent/service_foundation"
@@ -350,6 +382,114 @@
       "shadows_production_mutation": true,
       "tests": [
         "tests/service_reload_policy/"
+      ]
+    },
+    "agent/service_restart_canary/": {
+      "authority": "Narrow exact RESTART canary only; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED; public stop/start/signal denied; gateway self-control forbidden",
+      "dependency": "agent/service_restart_foundation/",
+      "description": "Single auxiliary service restart canary — exact allowlist for hermes-aux-canary.service, narrow RESTART capability separate from reload, durable idempotency/lock/budget/breaker, typed executor, kill-switch, no generic systemctl, no public stop/start/signal",
+      "files": [
+        "__init__.py",
+        "allowlist.py",
+        "approval.py",
+        "breaker.py",
+        "budget.py",
+        "cli.py",
+        "events.py",
+        "exceptions.py",
+        "executor.py",
+        "flags.py",
+        "gateway.py",
+        "idempotency.py",
+        "lock.py",
+        "manager.py",
+        "models.py",
+        "negative_matrix.py",
+        "plan.py",
+        "policy.py",
+        "preflight.py",
+        "recovery.py",
+        "rehearsal.py",
+        "shadow.py",
+        "stabilization.py",
+        "telemetry.py",
+        "unknown_outcome.py",
+        "verify.py"
+      ],
+      "key_modules": [
+        "ServiceRestartCanary",
+        "RestartCanaryPolicy",
+        "RestartAdmission",
+        "RestartApproval",
+        "RestartBudget",
+        "RestartBreaker",
+        "RestartLock",
+        "RestartIdempotency",
+        "RestartExecutor",
+        "RestartVerifier",
+        "RestartStabilization",
+        "RestartRecovery"
+      ],
+      "lifecycle": "KEEP_RUNNING_AS_HARMLESS_TEST_FIXTURE",
+      "name": "ServiceRestartCanary",
+      "path": "agent/service_restart_canary/",
+      "sprint": "1.3.13",
+      "tests": [
+        "test_allowlist.py",
+        "test_approval.py",
+        "test_breaker.py",
+        "test_budget.py",
+        "test_cli.py",
+        "test_executor.py",
+        "test_flags.py",
+        "test_gateway_deny.py",
+        "test_health.py",
+        "test_idempotency.py",
+        "test_kill_switch.py",
+        "test_live_contract.py",
+        "test_lock.py",
+        "test_manager.py",
+        "test_negative_matrix.py",
+        "test_orphan.py",
+        "test_pid_transition.py",
+        "test_plan.py",
+        "test_policy.py",
+        "test_ports.py",
+        "test_post_start_identity.py",
+        "test_preflight.py",
+        "test_quiescence.py",
+        "test_recovery.py",
+        "test_rehearsal.py",
+        "test_restart_as_rollback.py",
+        "test_shadow.py",
+        "test_unknown_outcome.py"
+      ]
+    },
+    "agent/service_restart_foundation/": {
+      "callers": [
+        "agent/service_foundation"
+      ],
+      "execution_enabled": false,
+      "key_modules": [
+        "models.py (RestartProfile, ProcessIdentity, RestartTransition)",
+        "eligibility.py (RestartEligibility, strict fail-closed precedence)",
+        "pid_transition.py (PIDTransitionModel + process-start identity)",
+        "quiescence.py + orphans.py (QuiescenceGate + orphan detection P0)",
+        "ports.py (port transition model)",
+        "stop_contract.py / start_contract.py / identity_after_start.py",
+        "dependencies.py / blast_radius.py / risk.py (dependency quiescence, blast, monotonicity)",
+        "plan.py (ServiceRestartPlan, immutable + revalidation)",
+        "guard.py (P0 execution guard: execute -> SERVICE_RESTART_DISABLED, adapter_calls=0)",
+        "gateway.py (SELF_CONTROL_FORBIDDEN)",
+        "unknown_outcome.py / recovery.py / rollback.py (no auto-retry; restart-as-rollback denied)",
+        "approval.py / budget.py / circuit_breaker.py (foundations, shadow tests only)",
+        "shadow.py / chaos.py (>=100 each)",
+        "events.py / telemetry.py / flags.py / cli.py (analysis-only CLI)"
+      ],
+      "role": "Sprint 1.3.12 Controlled Auxiliary Service Restart Foundation: models and rehearses restart semantics (PID transition, quiescence, orphans, ports, stop/start contracts, post-start identity, blast, risk, rollback, recovery) in SHADOW/FAKE ONLY; production restart execution = 0",
+      "shadows_production_mutation": true,
+      "tests": [
+        "tests/service_restart_foundation/"
       ]
     },
     "agent/system_boundary/": {

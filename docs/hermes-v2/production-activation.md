@@ -1,6 +1,6 @@
 # Production Activation — Hermes V2
 
-Updated: Sprint 1.1.1
+Updated: Sprint 1.3.13
 
 ## Current activation status (Stage 6 / operations)
 
@@ -15,6 +15,7 @@ Updated: Sprint 1.1.1
 | Operations Observability | **ACTIVE** |
 | Limited Service Reload | **RELOAD-ONLY** (Sprint 1.3.11; exact registered aux services) |
 | Service Restart Foundation | **SHADOW/FAKE ONLY** (Sprint 1.3.12; production execution = 0) |
+| Service Restart Canary | **ONE RESTART VERIFIED — CLOSED** (Sprint 1.3.13; success budget exhausted; kill-switch ON; fixture kept running) |
 
 ## Feature flags (live)
 

@@ -1,6 +1,6 @@
 # Operator Runbook — Hermes V2 Operations
 
-Sprint 1.1.1 · Applies to Read-Only Canary + Intent Router OBSERVE.
+Sprint 1.3.13 · Applies to Read-Only Canary + Intent Router OBSERVE + Service Restart Canary.
 No secrets in this doc.
 
 All commands read from the default V2 database (`state.db`). Add `--db PATH`
@@ -173,3 +173,41 @@ Immediate triggers: unsafe CANARY recommendation > 0, actual route
 changed by router, duplicate response, secret telemetry leak, gateway
 instability, memory/thread/fd leak, error rate > 5%, p95 > 20ms
 sustained, unexpected provider/scheduler/tool behavior.
+
+## 15. Service Restart Canary (Sprint 1.3.13)
+
+### Status (read-only)
+
+```bash
+python -m agent.service_restart_canary.cli status
+python -m agent.service_restart_canary.cli inspect
+python -m agent.service_restart_canary.cli eligibility
+python -m agent.service_restart_canary.cli plan
+python -m agent.service_restart_canary.cli shadow
+python -m agent.service_restart_canary.cli rehearsal
+```
+
+### Live restart (closed)
+
+The single approved live restart is complete. **Do not run a second restart.**
+
+See `docs/hermes-v2/service-restart-canary-runbook-1.3.13.md` for the full procedure.
+
+Budget: 1 success / 2 attempts. The success budget is exhausted and the kill-switch is ON.
+Canary lifecycle: `KEEP_RUNNING_AS_HARMLESS_TEST_FIXTURE`; later cleanup requires separate approval.
+
+### Rollback
+
+```bash
+export HERMES_SERVICE_RESTART_CANARY_V2_ENABLED=false
+export HERMES_SERVICE_RESTART_CANARY_V2_MODE=off
+```
+
+### Incident triggers
+
+- Wrong service restarted
+- Restart count >1 successful
+- Gateway mutated
+- Public stop/start/kill/signal executed
+- DB corrupted
+- Secret leak
