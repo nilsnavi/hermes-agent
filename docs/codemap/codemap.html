@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><title>Hermes Agent 2.0 Codemap — Sprint 1.3.14</title><script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script></head>
-<body><h1>Hermes Agent 2.0 — Codemap Sprint 1.3.14</h1><p>Generated: 2026-08-19T00:00:00+03:00. Production SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED.</p>
+<body><h1>Hermes Agent 2.0 — Codemap Sprint 1.3.14</h1><p>Generated: 2026-08-19T00:00:00+03:00. Production SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED. Multi-Service Execution: DISABLED. Real Adapter Calls = 0. Compensation: SIMULATED ONLY.</p>
 <pre class="mermaid">
 flowchart LR
  IR[Intent Router] --> CR[Capability Router / Policy]
@@ -25,6 +25,22 @@ flowchart LR
 
  GW[Production Gateway] -. no import / no call-site .-x SR
  SR -. production targets always BLOCK .-x PROD[Production config/services/provider/scheduler/network]
+
+MSE[MultiService Execution Layer: SIMULATION ONLY] --> MSEP[MultiServiceExecutionPlan]
+MSEP --> AUTH[MultiServiceExecutionAuthority]
+AUTH --> FR[Final Revalidation]
+FR --> BAR[ExecutionBarrier]
+BAR --> BEX[BoundedMultiServiceExecutor]
+BEX --> FAKE[FakeServiceAdapter]
+FAKE --> VER[Verify]
+VER --> STAB[Stabilization]
+STAB --> COMM[GlobalCommitCoordinator - Simulated Commit]
+COMM --> RECOV[Recovery / Compensation Bridge]
+BEX -. needs all gates: locks/budget/approval/barrier/recovery/boundary .-x DENY[EXECUTION_DENIED adapter_calls=0]
+FAKE -. ADAPTER SUCCEEDED != COMMITTED .-x VER
+LAB1["MULTI-SERVICE EXECUTION DISABLED"]
+LAB2["REAL ADAPTER CALLS = 0"]
+LAB3["COMPENSATION SIMULATED ONLY"]
 </pre><script>mermaid.initialize({startOnLoad:true,securityLevel:'strict'});</script>
 <section id="service-restart-canary-1.3.13"><h2>ServiceRestartCanary (1.3.13 / baseline 1.3.13.1)</h2>
 <p><strong>RestartFoundation → RestartCanaryPolicy → Approval → Lock → Budget → ExactRestartExecutor → PID Transition → Quiescence → New Identity Verify → Stabilization Health → Commit.</strong></p>

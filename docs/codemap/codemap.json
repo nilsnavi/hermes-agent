@@ -369,6 +369,81 @@
         "SystemClock",
         "BoundedRestartExecutor (non-authoritative primitive)"
       ]
+    },
+    "multi_service_execution": {
+      "MODULE": "agent/multi_service_execution/",
+      "STATUS": "MULTI-SERVICE EXECUTION DISABLED; REAL ADAPTER CALLS = 0; COMPENSATION SIMULATED ONLY",
+      "chain": [
+        "MultiServiceCoordinator",
+        "MultiServiceExecutionPlan",
+        "MultiServiceExecutionAuthority",
+        "Final Revalidation",
+        "ExecutionBarrier",
+        "BoundedMultiServiceExecutor",
+        "FakeServiceAdapter",
+        "Verify",
+        "Stabilization",
+        "GlobalCommitCoordinator (Simulated Commit)",
+        "Recovery/Compensation Bridge"
+      ],
+      "symbols": [
+        "MultiServiceExecutionPlan",
+        "MultiServiceExecutionAuthority",
+        "BoundedMultiServiceExecutor",
+        "ExecutionBarrier",
+        "ExecutionReceipt",
+        "GlobalCommitCoordinator",
+        "CompensationBridge",
+        "RecoveryBridge"
+      ],
+      "key_modules": [
+        "models.py",
+        "authority.py",
+        "pipeline.py",
+        "executor.py",
+        "barrier.py",
+        "commit.py",
+        "receipt.py",
+        "idempotency.py",
+        "locks.py",
+        "budget.py",
+        "approval.py",
+        "risk.py",
+        "compensation_bridge.py",
+        "recovery_bridge.py",
+        "verifier.py",
+        "stabilization.py",
+        "fake_adapter.py",
+        "outcome.py",
+        "telemetry.py",
+        "cli.py"
+      ],
+      "deny_branches": [
+        "HOST/NETWORK/UNKNOWN blast",
+        "gateway",
+        "scheduler",
+        "provider",
+        "database",
+        "network",
+        "auth",
+        "security",
+        "docker/container",
+        "ssh",
+        "unknown/unregistered service",
+        "generic SERVICE_CONTROL",
+        "SYSTEM_CONTROL",
+        "stop/start/restart/signal/kill/pkill",
+        "raw subprocess / shell / os.system",
+        "dynamic executable",
+        "caller unit / command",
+        "child DENY -> parent DENY",
+        "UNKNOWN -> no auto retry",
+        "adapter success != commit",
+        "partial success not global success",
+        "second budget / approval consume",
+        "dup claim / double writer"
+      ],
+      "execution": "MULTI-SERVICE EXECUTION DISABLED; REAL ADAPTER CALLS=0; COMPENSATION SIMULATED ONLY; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED; registry size=1"
     }
   },
   "generated_at": "2026-08-21T13:43:54+03:00",
@@ -792,6 +867,53 @@
       "tests": [
         "tests/verified_tool_executor/"
       ]
+    },
+    "agent/multi_service_execution/": {
+      "execution_enabled": false,
+      "flags": {
+        "HERMES_MULTI_SERVICE_EXECUTION_V2_ENABLED": "false",
+        "HERMES_MULTI_SERVICE_EXECUTION_V2_MODE": "off/shadow/rehearsal/canary (unknown->off)"
+      },
+      "key_modules": [
+        "models.py",
+        "flags.py",
+        "exceptions.py",
+        "authority.py",
+        "executor.py",
+        "pipeline.py",
+        "barrier.py",
+        "receipt.py",
+        "idempotency.py",
+        "locks.py",
+        "budget.py",
+        "approval.py",
+        "risk.py",
+        "compensation_bridge.py",
+        "recovery_bridge.py",
+        "verifier.py",
+        "stabilization.py",
+        "commit.py",
+        "fake_adapter.py",
+        "outcome.py",
+        "telemetry.py",
+        "cli.py"
+      ],
+      "role": "Sprint 1.3.17 bounded multi-service execution foundation (SIMULATION ONLY); composed over coordination + recovery + system-boundary",
+      "status": "MULTI-SERVICE EXECUTION DISABLED; REAL ADAPTER CALLS = 0; COMPENSATION SIMULATED ONLY",
+      "symbols": [
+        "MultiServiceExecutionPlan",
+        "MultiServiceExecutionAuthority",
+        "BoundedMultiServiceExecutor",
+        "ExecutionBarrier",
+        "ExecutionReceipt",
+        "GlobalCommitCoordinator",
+        "CompensationBridge",
+        "RecoveryBridge"
+      ],
+      "tests": [
+        "tests/multi_service_execution/"
+      ],
+      "adapter_call_count": 0
     }
   },
   "schema_version": 2
