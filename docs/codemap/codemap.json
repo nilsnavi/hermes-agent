@@ -87,6 +87,44 @@
         "ExecutionGuard"
       ]
     },
+    "multi_service_recovery": {
+      "MODULE": "agent/multi_service_recovery/",
+      "STATUS": "RECOVERY DOES NOT GRANT AUTHORITY; MULTI-SERVICE EXECUTION DISABLED; COMPENSATION EXECUTION SIMULATED ONLY",
+      "chain": [
+        "MultiServiceRecoveryCoordinator",
+        "RecoveryEvidence",
+        "RecoveryDisposition",
+        "RecoveryClaim",
+        "RecoveryPlan",
+        "CompensationPlan",
+        "RecoveryEventJournal",
+        "ManualReviewPayload"
+      ],
+      "execution": "NO adapter execution from recovery coordinator; REAL compensation adapter calls=0; real multi-service adapter calls=0",
+      "fail_closed": [
+        "UNKNOWN_RECOVERY_STATE",
+        "MANUAL_REVIEW_REQUIRED",
+        "unknown never -> safe execution",
+        "no auto-retry UNKNOWN_OUTCOME",
+        "baseline drift -> no blind continue",
+        "graph/config drift -> revalidate",
+        "PID reuse -> deny same owner",
+        "foreign host claim -> DENY",
+        "live owner lock -> no takeover"
+      ],
+      "key_modules": [
+        "MultiServiceRecoveryCoordinator",
+        "RecoveryClaim (claim-first lease)",
+        "RecoveryDisposition",
+        "CrashPoint taxonomy",
+        "PartialState model",
+        "event order validation",
+        "evidence reconciliation",
+        "lock/budget/approval recovery",
+        "manual review payload",
+        "dry-run"
+      ]
+    },
     "recovery_pipeline": [
       "AppendOnlyTransactionJournal",
       "BoundedReadOnlyScanner",
@@ -398,6 +436,33 @@
       ],
       "tests": [
         "tests/multi_service_coordination/"
+      ]
+    },
+    "agent/multi_service_recovery/": {
+      "execution_enabled": false,
+      "flags": {
+        "HERMES_MULTI_SERVICE_RECOVERY_STORE": "runtime-state path"
+      },
+      "key_modules": [
+        "models.py",
+        "classify.py",
+        "coordinator.py",
+        "claim.py-in-store.py",
+        "store.py",
+        "clock.py",
+        "provenance.py",
+        "reconcile.py",
+        "lock_recovery.py",
+        "budget_recovery.py",
+        "approval_recovery.py",
+        "compensation.py",
+        "manual_review.py",
+        "chaos.py",
+        "cli.py"
+      ],
+      "role": "Sprint 1.3.16 multi-service recovery & compensation hardening - crash recovery, partial-execution model, durable evidence reconciliation, unknown-outcome fail-closed, recovery claim-first lease, simulated-only compensation; RECOVERY DOES NOT GRANT AUTHORITY",
+      "tests": [
+        "tests/multi_service_recovery/"
       ]
     },
     "agent/production_canary/": {
