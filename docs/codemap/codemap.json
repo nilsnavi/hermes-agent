@@ -223,10 +223,65 @@
         "RollbackStrategy",
         "RestartExecutionGuard"
       ]
+    },
+    "service_restart_policy_pipeline": {
+      "chain": [
+        "RestartFoundation",
+        "LimitedRestartRuntime (sole authority coordinator)",
+        "Immutable ProfileRegistry + Admission",
+        "Atomic Semantic Idempotency Claim",
+        "Live-owner-aware Service Lock",
+        "Post-lock Duplicate Recheck",
+        "Single-use Approval",
+        "Budget Reservation",
+        "Circuit Breaker",
+        "Pre-execution Revalidation",
+        "One-shot Internal Execution Grant",
+        "Non-authoritative BoundedRestartExecutor",
+        "ADAPTER_SUCCEEDED",
+        "Post-transition + Identity + Config + Graph + Health Verify",
+        "Stabilization",
+        "Coordinator-owned COMMITTED"
+      ],
+      "deny_branches": [
+        "gateway",
+        "runtime-discovered service",
+        "unregistered service",
+        "consumer ACTIVE/CRITICAL/UNKNOWN",
+        "blast MULTI_SERVICE/HOST/NETWORK/UNKNOWN",
+        "public stop/start",
+        "kill/signal",
+        "SYSTEM_CONTROL",
+        "generic SERVICE_CONTROL",
+        "live concurrency",
+        "rollout disabled",
+        "kill-switch active",
+        "missing/forged/expired/replayed execution grant",
+        "caller-controlled authority time",
+        "expired lock with live or unknown owner",
+        "duplicate claim owned by another transaction",
+        "UNKNOWN_OUTCOME retry"
+      ],
+      "execution": "Current live registry remains exactly one verified auxiliary service; read-only admission only; kill-switch ON; no production restart in Sprint 1.3.14",
+      "key_modules": [
+        "LimitedRestartPolicy",
+        "RestartProfileRegistry",
+        "RestartAdmission",
+        "RestartApprovalPolicy",
+        "RestartConsumerPolicy",
+        "RestartBudget",
+        "RestartCircuitBreaker",
+        "RestartConcurrencyPolicy",
+        "LimitedRestartRuntime",
+        "DurableIdempotencyStore",
+        "HardenedServiceLock",
+        "SystemClock",
+        "BoundedRestartExecutor (non-authoritative primitive)"
+      ]
     }
   },
-  "generated_at": "2026-08-21T11:58:59+03:00",
-  "generator": "hermes-agent Sprint 1.3.13.1 restart canary baseline consolidation",
+  "generated_at": "2026-08-21T13:43:54+03:00",
+  "generator": "hermes-agent Sprint 1.3.14 limited auxiliary service restart policy",
   "modules": {
     "agent/capability_router/": {
       "callers": [
@@ -490,6 +545,64 @@
       "shadows_production_mutation": true,
       "tests": [
         "tests/service_restart_foundation/"
+      ]
+    },
+    "agent/service_restart_policy/": {
+      "authority": "Exact registered Hermes auxiliary profiles only; runtime discovery never grants; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL/public stop/start/signal/gateway denied",
+      "current_live_registry": [
+        "hermes-aux-canary.service"
+      ],
+      "dependency": "agent/service_restart_foundation/ + agent/service_restart_canary/ contracts",
+      "description": "Default-off limited restart policy whose sole authority coordinator is LimitedRestartRuntime: internal monotonic clock/provenance, atomic claim-first idempotency, live-owner PID+start+transaction+nonce lock (renewal requires live current process), approval/budget/breaker/revalidation gates, one-shot execution grants, non-authoritative adapter executor and coordinator-owned COMMITTED (store passive, commit passthrough denied) after complete post-verification; immutable construction-time registry snapshot bound by registry_digest (REGISTRY_DRIFT detects module rebind/registry drift), live-owner verified lock renewal (foreign/pid-spoof/nonce-only renewal denied), cross-instance/copy/pickle grant replay denied (A1).",
+      "files": [
+        "__init__.py",
+        "_durable.py",
+        "approval.py",
+        "breaker.py",
+        "budget.py",
+        "clock.py",
+        "concurrency.py",
+        "consumer.py",
+        "evaluation.py",
+        "executor.py",
+        "idempotency.py",
+        "lock.py",
+        "models.py",
+        "policy.py",
+        "registry.py",
+        "runtime.py"
+      ],
+      "key_modules": [
+        "LimitedRestartPolicy",
+        "RestartProfileRegistry",
+        "RestartAdmission",
+        "RestartApprovalPolicy",
+        "RestartConsumerPolicy",
+        "RestartBudget",
+        "RestartCircuitBreaker",
+        "RestartConcurrencyPolicy",
+        "LimitedRestartRuntime",
+        "DurableIdempotencyStore",
+        "HardenedServiceLock",
+        "SystemClock",
+        "BoundedRestartExecutor (non-authoritative primitive)"
+      ],
+      "max_registered_profiles": 3,
+      "name": "LimitedRestartPolicy",
+      "path": "agent/service_restart_policy/",
+      "sprint": "1.3.14",
+      "tests": [
+        "test_durable_execution.py",
+        "test_evaluation.py",
+        "test_policy_contract.py",
+        "test_runtime.py",
+        "test_sprint_1314_acceptance.py",
+        "test_executor_authority_boundary.py",
+        "test_authority_sealing.py",
+        "test_commit_state_machine.py",
+        "test_trusted_clock.py",
+        "test_live_owner_lock.py",
+        "test_idempotency_races.py"
       ]
     },
     "agent/system_boundary/": {

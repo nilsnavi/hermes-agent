@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><title>Hermes Agent 2.0 Codemap — Sprint 1.3.13.1</title><script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script></head>
-<body><h1>Hermes Agent 2.0 — Codemap Sprint 1.3.13.1</h1><p>Generated: 2026-08-19T00:00:00+03:00. Production SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED.</p>
+<html lang="ru"><head><meta charset="utf-8"><title>Hermes Agent 2.0 Codemap — Sprint 1.3.14</title><script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script></head>
+<body><h1>Hermes Agent 2.0 — Codemap Sprint 1.3.14</h1><p>Generated: 2026-08-19T00:00:00+03:00. Production SYSTEM_CONTROL: OFF. Generic SERVICE_CONTROL: DENIED.</p>
 <pre class="mermaid">
 flowchart LR
  IR[Intent Router] --> CR[Capability Router / Policy]
@@ -32,6 +32,16 @@ flowchart LR
 <p>Deny branches: gateway · unregistered service · public stop · public start · kill/signal · second restart · restart-as-rollback · SYSTEM_CONTROL · generic SERVICE_CONTROL.</p>
 <p>Authority: one exact auxiliary fixture <code>hermes-aux-canary.service</code>; historical committed restart = 1; kill-switch ON; no further restart; gateway self-control forbidden. Lifecycle: KEEP_RUNNING_AS_HARMLESS_TEST_FIXTURE.</p>
 <p>Source: <code>agent/service_restart_canary/</code>. Tests: <code>tests/service_restart_canary/</code>.</p>
+</section>
+
+<section id="service-restart-policy-1.3.14"><h2>Limited Auxiliary Service Restart Policy (1.3.14)</h2>
+<p><strong>RestartFoundation → LimitedRestartRuntime (sole authority coordinator) → immutable ProfileRegistry snapshot (registry_digest/REGISTRY_DRIFT) → Admission → atomic semantic claim → live-owner lock (renewal requires live current process) → duplicate recheck → approval → budget reservation → breaker → pre-execution revalidation → one-shot internal grant (instance-token-bound, cross-instance/copy/pickle replay denied) → non-authoritative BoundedRestartExecutor → ADAPTER_SUCCEEDED → post-transition/identity/config/graph/health verification → stabilization → coordinator-owned COMMITTED (store is passive, commit passthrough denied).</strong></p>
+<p>Components: LimitedRestartPolicy · RestartProfileRegistry · RestartAdmission · RestartApprovalPolicy · RestartConsumerPolicy · RestartBudget · RestartCircuitBreaker · RestartConcurrencyPolicy · LimitedRestartRuntime · DurableIdempotencyStore · HardenedServiceLock · SystemClock · BoundedRestartExecutor (non-authoritative primitive).</p>
+<p>Registry architecture: static immutable maximum 3 profiles; current live registry remains exactly one verified service: <code>hermes-aux-canary.service</code>. Runtime discovery never grants authority.</p>
+<p>Executor: capability-private adapter primitive; direct calls, fake/copied/expired/replayed grants and binding drift deny before runner. It returns adapter-level outcomes only and never COMMITTED.</p>
+<p>Time/lock/idempotency: production authority time comes only from internal monotonic SystemClock with boot provenance; expired lease cannot evict a live/unknown owner; semantic intent is atomically claimed before approval/budget and rechecked after lock.</p>
+<p>Deny: gateway · public stop/start · kill/signal · unknown/discovered service · active/critical/unknown consumer · unsafe blast · live concurrency · missing grant · caller time · live/unknown lock owner · duplicate/unknown outcome · SYSTEM_CONTROL · generic SERVICE_CONTROL.</p>
+<p>Sprint execution: read-only live admission only; kill-switch ON; production restart count added by sprint = 0.</p>
 </section>
 </body></html>
 <section id="production-policy-1.3.8"><h2>Limited Production Mutation Policy (1.3.8)</h2>
