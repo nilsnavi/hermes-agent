@@ -78,6 +78,7 @@ LAB3["COMPENSATION SIMULATED ONLY"]
 <li>Fail-closed: UNKNOWN_RECOVERY_STATE, no auto-retry UNKNOWN_OUTCOME, baseline/graph drift blocks resume, live-owner lock no takeover</li>
 </ul>
 </section>
+<section id="multi-service-execution-canary"><h2>Multi-Service Execution Canary Foundation 1.3.18</h2><pre>ProductionCanaryRequest -&gt; MultiServiceCanaryAdmission -&gt; CanaryServiceSet -&gt; MultiServiceCoordinator -&gt; GlobalTransaction -&gt; ExecutionBarrier -&gt; CanaryChildExecutionAdapter (sealed fake) -&gt; Verification -&gt; Stabilization -&gt; GLOBAL_COMMITTED_SIMULATED -&gt; RecoveryBridge / CompensationSimulation</pre><p><strong>REAL MULTI-SERVICE EXECUTION DISABLED</strong> · REAL ADAPTER CALLS = 0 · COMPENSATION SIMULATED ONLY · SYSTEM_CONTROL OFF · GENERIC SERVICE_CONTROL DENIED · RESTART REGISTRY SIZE = 1</p></section>
 </body></html>
 <section id="production-policy-1.3.8"><h2>Limited Production Mutation Policy (1.3.8)</h2>
 <p>CapabilityPolicyEngine → VerifiedToolExecutor → SystemBoundaryLayer → TransactionalChangePipeline → <strong>LimitedProductionMutationPolicy</strong> → ResourceProfile → AtomicWrite / Verify / Health / Rollback.</p>

@@ -444,6 +444,41 @@
         "dup claim / double writer"
       ],
       "execution": "MULTI-SERVICE EXECUTION DISABLED; REAL ADAPTER CALLS=0; COMPENSATION SIMULATED ONLY; SYSTEM_CONTROL OFF; generic SERVICE_CONTROL DENIED; registry size=1"
+    },
+    "multi_service_execution_canary": {
+      "chain": [
+        "ProductionCanaryRequest",
+        "MultiServiceCanaryAdmission",
+        "CanaryServiceSet",
+        "MultiServiceCoordinator",
+        "GlobalTransaction",
+        "ExecutionBarrier",
+        "CanaryChildExecutionAdapter (sealed fake)",
+        "Verification",
+        "Stabilization",
+        "GLOBAL_COMMITTED_SIMULATED",
+        "RecoveryBridge / CompensationSimulation"
+      ],
+      "description": "Production-evidence admission composition over certified coordination/execution/recovery; exact two Hermes-owned non-systemd fixtures; all child effects and global commit simulated.",
+      "invariants": [
+        "REAL MULTI-SERVICE EXECUTION DISABLED",
+        "REAL ADAPTER CALLS = 0",
+        "COMPENSATION SIMULATED ONLY",
+        "SYSTEM_CONTROL OFF",
+        "GENERIC SERVICE_CONTROL DENIED",
+        "RESTART REGISTRY SIZE = 1"
+      ],
+      "reuses": [
+        "MultiServiceCoordinator",
+        "MultiServiceExecutionPlan",
+        "MultiServiceExecutionAuthority",
+        "GlobalTransaction",
+        "CanonicalLockSet",
+        "GlobalIdempotency",
+        "ExecutionBarrier",
+        "GlobalCommitCoordinator",
+        "MultiServiceRecoveryCoordinator"
+      ]
     }
   },
   "generated_at": "2026-08-21T13:43:54+03:00",
@@ -914,6 +949,60 @@
         "tests/multi_service_execution/"
       ],
       "adapter_call_count": 0
+    },
+    "multi_service_execution_canary": {
+      "default_mode": "off",
+      "flags": [
+        "HERMES_MULTI_SERVICE_CANARY_V2_ENABLED",
+        "HERMES_MULTI_SERVICE_CANARY_V2_MODE"
+      ],
+      "key_modules": [
+        "models",
+        "flags",
+        "registry",
+        "admission",
+        "service_set",
+        "policy",
+        "approval",
+        "budget",
+        "lock",
+        "preflight",
+        "barrier",
+        "adapter",
+        "pipeline",
+        "verify",
+        "stabilization",
+        "commit",
+        "recovery",
+        "telemetry",
+        "cli"
+      ],
+      "modes": [
+        "off",
+        "shadow",
+        "canary"
+      ],
+      "path": "agent/multi_service_execution_canary",
+      "real_child_adapter_calls": 0,
+      "real_child_execution_enabled": false,
+      "real_compensation_adapter_calls": 0,
+      "restart_registry_expanded": false,
+      "service_set": [
+        "canary-service-a",
+        "canary-service-b"
+      ],
+      "status": "simulation-only canary foundation; real execution disabled",
+      "symbols": [
+        "ProductionCanaryRequest",
+        "MultiServiceCanaryAdmission",
+        "CanaryServiceSet",
+        "CanaryRuntime",
+        "ProductionCanaryAuthority",
+        "CanaryChildExecutionAdapter",
+        "CanaryExecutionBarrier",
+        "CanaryRecoveryClassifier"
+      ],
+      "version": "1.3.18"
     }
   },
   "schema_version": 2
