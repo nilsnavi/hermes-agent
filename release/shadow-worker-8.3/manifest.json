@@ -1,0 +1,46 @@
+{
+  "artifact": "hermes-v2-isolated-shadow-worker",
+  "build_timestamp": "2026-08-26T15:13:20Z",
+  "config_example": {
+    "max_agent_duration_ms": 4000,
+    "max_concurrent_runs": 16,
+    "max_dag_nodes": 64,
+    "max_envelope_bytes": 65536,
+    "max_queue_depth": 1000,
+    "max_retry_count": 2,
+    "max_task_duration_ms": 5000,
+    "memory_writes": false,
+    "mutation_capabilities": false,
+    "network_read_only": false,
+    "sampling_mode": "off",
+    "sampling_percent": 0,
+    "shadow_kill_switch": true,
+    "worker_enabled": false
+  },
+  "git": {
+    "branch": "sprint/1.3.7-narrow-production-canary",
+    "head": "2b27e82f5e364602fb07e1ae70d8b271deab5db7",
+    "parent_baseline": "2b27e82f5e364602fb07e1ae70d8b271deab5db7"
+  },
+  "parent_agent_platform_baseline": "2b27e82f5e364602fb07e1ae70d8b271deab5db7",
+  "phase": "8.3",
+  "python": {
+    "interpreter_container": "uv/cpython-3.11.15",
+    "requires_python": ">=3.11,<3.14"
+  },
+  "schema_version": "shadow-envelope/v1",
+  "worker_file_sha256": {
+    "__init__.py": "fdc1d439c39c8484264f6a506fc7808140f91ab22221792ee322fec82cf016fa",
+    "__main__.py": "a04dfca6c273ed5118801a64a3bac9a8c8f08a86350becab16e884a61bdd4e2a",
+    "audit.py": "babd36d1cd9ede49cb6fafb35d94b5651ea4c24ab11452b8742421cbe2499011",
+    "config.py": "6b02c48b20a6e9c7991435da21fd47145f1b7fd4d62104bf0ac3029059a8dbcb",
+    "envelope.py": "bfa41582d614e846edb0cdba03e784a5c229519568b9efa58fb39d1e9433384c",
+    "exceptions.py": "1580039c404d6ea9b053d511e34995fe1fb2be812f77e2eaea82740ffd488dd2",
+    "health.py": "36409bc0dbd07ebaf3f6272dff45362d4728f2ad2df980277f10b5c4e420c5fb",
+    "lifecycle.py": "4e4cef37fc9e4023645304c58906c4e0b25303762cc8e7ee722e031bd97af40f",
+    "metrics.py": "2835d715d2a1eeb17cea82141f8b96c7af87743b52eed0f53cfacedc59140ebb",
+    "standalone.py": "3d828ee64f535b1a1e7f6a2c41636603142fd9edd50118acea6a28f4e8b4503c",
+    "transport.py": "db885412f7dff75d5888bb7a140d98e907d2f094478df4033764e98f487f2f83",
+    "worker.py": "952f3aac631b61941099e1d0058295e5796a5598cd82eb48ed13d0f09fa463d0"
+  }
+}

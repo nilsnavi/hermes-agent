@@ -1,0 +1,16 @@
+{
+  "max_agent_duration_ms": 4000,
+  "max_concurrent_runs": 16,
+  "max_dag_nodes": 64,
+  "max_envelope_bytes": 65536,
+  "max_queue_depth": 1000,
+  "max_retry_count": 2,
+  "max_task_duration_ms": 5000,
+  "memory_writes": false,
+  "mutation_capabilities": false,
+  "network_read_only": false,
+  "sampling_mode": "off",
+  "sampling_percent": 0,
+  "shadow_kill_switch": true,
+  "worker_enabled": false
+}

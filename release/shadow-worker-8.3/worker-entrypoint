@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Executable entrypoint for the isolated shadow worker.
+# Phase 8.3 certification only - NOT for live deployment yet.
+exec python -m agent.shadow_worker "$@"
