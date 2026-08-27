@@ -23,9 +23,11 @@ SUCCESS/absent -> ACCEPTED) is provided; both implement the same protocol.
 
 from __future__ import annotations
 
+import grp
 import os
 import queue as _queue
 import socket
+import stat as _stat
 import struct
 import threading
 from dataclasses import dataclass
@@ -122,6 +124,86 @@ class QueueOneWayTransport(OneWayProducer, OneWayConsumer):
 
 import fcntl
 
+_TAP_SOCKET_MODE = 0o660
+_DEFAULT_TAP_GROUP = "hermes-shadow-tap"
+
+
+class SocketGroupNotFound(TransportUnavailable):
+    """Raised when the durable tap socket group does not exist (fail closed).
+
+    Typed outcome: ``SOCKET_GROUP_NOT_FOUND``.  The worker must NOT create the
+    group itself; only the external operator may provision it.
+    """
+
+
+class SocketPermissionError(TransportUnavailable):
+    """Raised when durable socket ownership/mode cannot be enforced.
+
+    The transport is never exposed as healthy unless the verified inode has
+    group == tap group and mode == 0660 (Phase 8.5.1).
+    """
+
+
+def _resolve_tap_gid(group: str) -> int:
+    """Resolve the tap socket group GID by canonical name; fail closed if absent."""
+    if not isinstance(group, str) or not group:
+        raise SocketGroupNotFound("SOCKET_GROUP_NOT_FOUND: empty tap socket group")
+    try:
+        return grp.getgrnam(group).gr_gid
+    except KeyError as exc:
+        raise SocketGroupNotFound(
+            f"SOCKET_GROUP_NOT_FOUND: tap socket group {group!r} does not exist"
+        ) from exc
+
+
+def _unlink_stale_socket_safely(path: str) -> None:
+    """Remove only a pre-existing Unix socket inode; refuse symlinks/other objects."""
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if _stat.S_ISLNK(st.st_mode):
+        raise SocketPermissionError(
+            f"STALE_SOCKET_UNSAFE: refusing to follow symlink at {path!r}")
+    if not _stat.S_ISSOCK(st.st_mode):
+        raise SocketPermissionError(
+            f"STALE_SOCKET_UNSAFE: {path!r} is not a unix socket; refusing to unlink")
+    os.unlink(path)
+
+
+def _enforce_socket_inode(path: str, gid: int) -> None:
+    """Set and verify durable tap ownership/mode on the freshly-bound socket.
+
+    Uses PATH-based ``chown/chmod`` (``fchmod`` is a no-op for AF_UNIX sockets on
+    Linux).  The path is the socket we just bound and live in a directory we own,
+    so it cannot be redirected by an unrelated party; to defend the remaining
+    bind->chown->chmod window we require the re-stat to return the SAME inode,
+    and the final verification to be exact (mode==0660, gid==tap, uid==owner).
+    """
+    try:
+        before = os.stat(path)
+    except OSError as exc:
+        raise SocketPermissionError(f"could not stat socket pre-apply: {exc}") from exc
+    dev_ino = (before.st_dev, before.st_ino)
+    try:
+        os.chown(path, -1, gid)  # -1 uid => owner (runtime user) unchanged
+        os.chmod(path, _TAP_SOCKET_MODE)
+    except OSError as exc:
+        raise SocketPermissionError(
+            f"could not apply tap group/mode to socket {path!r}: {exc}") from exc
+    try:
+        st = os.stat(path)
+    except OSError as exc:
+        raise SocketPermissionError(f"could not stat socket: {exc}") from exc
+    if (st.st_dev, st.st_ino) != dev_ino:
+        raise SocketPermissionError("socket inode replaced during permission apply")
+    if (st.st_mode & 0o777) != _TAP_SOCKET_MODE:
+        raise SocketPermissionError(f"socket mode != 0660: got {oct(st.st_mode & 0o777)}")
+    if st.st_gid != gid:
+        raise SocketPermissionError(f"socket gid != tap gid {gid}: got {st.st_gid}")
+    if st.st_uid != os.getuid():
+        raise SocketPermissionError(f"socket owner changed: uid {st.st_uid} != {os.getuid()}")
+
 
 class UnixDatagramShadowTransport(OneWayConsumer):
     """Worker (consumer) side of a one-way bounded Unix datagram transport.
@@ -129,23 +211,57 @@ class UnixDatagramShadowTransport(OneWayConsumer):
     Binds a path and reads only; it has NO send surface, so there is no path
     that can carry data back to the gateway (WORKER_TO_PRODUCTION_CHANNELS=0).
     ``queue_depth`` is a byte estimate (FIONREAD) -- informational only.
+
+    Durable least-privilege ownership (Phase 8.5.1): after ``bind`` the inode is
+    set to group ``tap_socket_group`` (default ``hermes-shadow-tap``) and mode
+    ``0660`` via ``chown/chmod``, then verified with ``stat``.  The transport is
+    only exposed as ready if the verification succeeds; a missing group,
+    non-applicable group, or wrong resulting mode/gid/uid fails closed.
     """
 
     __slots__ = ("_sock", "_path", "_received", "_lock")
 
-    def __init__(self, path: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        *,
+        tap_socket_group: str = _DEFAULT_TAP_GROUP,
+    ) -> None:
         self._path = path
         self._received = 0
         self._lock = threading.Lock()
+        # Fail closed BEFORE creating/binding anything if the tap group is absent.
+        gid = _resolve_tap_gid(tap_socket_group)
+        sock = None
         try:
-            if os.path.exists(path):
-                os.unlink(path)
+            _unlink_stale_socket_safely(path)
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
             sock.bind(path)
+            _enforce_socket_inode(path, gid)
             sock.setblocking(False)
             self._sock = sock
+        except TransportUnavailable:
+            self._cleanup_partial(path, sock)
+            raise
         except OSError as exc:
-            raise TransportUnavailable(f"could not bind unix datagram transport: {exc}")
+            self._cleanup_partial(path, sock)
+            raise TransportUnavailable(f"could not bind unix datagram transport: {exc}") from exc
+
+    @staticmethod
+    def _cleanup_partial(path: str, sock) -> None:
+        # Only unwrap a socket WE created+bound.  If we failed BEFORE binding
+        # (e.g. a stale symlink/regular-file refusal), leave the foreign object
+        # untouched -- never unlink a path we did not own.
+        if sock is None:
+            return
+        try:
+            sock.close()
+        except OSError:
+            pass
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
     def recv(self, timeout: float = 0.01) -> bytes | None:
         try:
@@ -265,6 +381,8 @@ __all__ = [
     "OneWayConsumer",
     "OneWayProducer",
     "QueueOneWayTransport",
+    "SocketGroupNotFound",
+    "SocketPermissionError",
     "UnixDatagramProducer",
     "UnixDatagramShadowTransport",
     "emit_into",

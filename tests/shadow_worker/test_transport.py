@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+import grp
 import pytest
 
 from agent.shadow_worker.envelope import (
@@ -77,8 +78,12 @@ def test_no_worker_to_production_channel_surface(queue):
 
 @pytest.fixture
 def unix(tmp_path):
+    # Phase 8.5.1: the durable tap group is required to bind; use the test
+    # process's own primary group (a group the runner is a member of) so the
+    # real fchown applies without root. Production default is hermes-shadow-tap.
+    _grp = grp.getgrgid(os.getgid()).gr_name
     path = str(tmp_path / "shadow.sock")
-    t = UnixDatagramShadowTransport(path)
+    t = UnixDatagramShadowTransport(path, tap_socket_group=_grp)
     p = UnixDatagramProducer(path, max_inflight=4)
     yield t, p
     p.close()

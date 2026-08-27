@@ -12,5 +12,7 @@
   "sampling_mode": "off",
   "sampling_percent": 0,
   "shadow_kill_switch": true,
+  "tap_socket_group": "hermes-shadow-tap",
+  "tap_socket_mode": 420,
   "worker_enabled": false
 }

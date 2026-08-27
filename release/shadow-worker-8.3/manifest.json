@@ -1,6 +1,6 @@
 {
   "artifact": "hermes-v2-isolated-shadow-worker",
-  "build_timestamp": "2026-08-26T15:13:20Z",
+  "build_timestamp": "2026-08-27T00:00:00Z",
   "config_example": {
     "max_agent_duration_ms": 4000,
     "max_concurrent_runs": 16,
@@ -15,15 +15,18 @@
     "sampling_mode": "off",
     "sampling_percent": 0,
     "shadow_kill_switch": true,
+    "tap_socket_group": "hermes-shadow-tap",
+    "tap_socket_mode": 420,
     "worker_enabled": false
   },
   "git": {
     "branch": "sprint/1.3.7-narrow-production-canary",
-    "head": "2b27e82f5e364602fb07e1ae70d8b271deab5db7",
-    "parent_baseline": "2b27e82f5e364602fb07e1ae70d8b271deab5db7"
+    "head": "1002cc48daa7015a069b83b1a490261d792e8cee",
+    "parent_baseline": "1002cc48daa7015a069b83b1a490261d792e8cee"
   },
   "parent_agent_platform_baseline": "2b27e82f5e364602fb07e1ae70d8b271deab5db7",
-  "phase": "8.3",
+  "parent_worker_baseline": "1002cc48daa7015a069b83b1a490261d792e8cee",
+  "phase": "8.5.1",
   "python": {
     "interpreter_container": "uv/cpython-3.11.15",
     "requires_python": ">=3.11,<3.14"
@@ -40,7 +43,7 @@
     "lifecycle.py": "4e4cef37fc9e4023645304c58906c4e0b25303762cc8e7ee722e031bd97af40f",
     "metrics.py": "2835d715d2a1eeb17cea82141f8b96c7af87743b52eed0f53cfacedc59140ebb",
     "standalone.py": "3d828ee64f535b1a1e7f6a2c41636603142fd9edd50118acea6a28f4e8b4503c",
-    "transport.py": "db885412f7dff75d5888bb7a140d98e907d2f094478df4033764e98f487f2f83",
+    "transport.py": "cbd6d69f3c6919bfdb5e271f935e6a9ba2460cd23cc583281b11c26735cbedde",
     "worker.py": "952f3aac631b61941099e1d0058295e5796a5598cd82eb48ed13d0f09fa463d0"
   }
 }
