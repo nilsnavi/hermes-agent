@@ -25,6 +25,7 @@ CANONICAL_CAPABILITIES: frozenset[str] = frozenset(
         "file_write",
         "code_execution",
         "network_access",
+        "integration_read",
         "memory_retrieval",
         "memory_mutation",
         "message_exchange",
@@ -42,6 +43,7 @@ CAPABILITY_TO_PERMISSION: dict[str, str] = {
     "file_write": "agents.register",
     "code_execution": "system.operate",
     "network_access": "system.operate",
+    "integration_read": "integrations.read",
     "memory_retrieval": "memory.read",
     "memory_mutation": "memory.write",
     "message_exchange": "message.write",  # reserved; denied unless added to canonical

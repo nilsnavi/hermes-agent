@@ -33,6 +33,8 @@ CANONICAL_PERMISSIONS: frozenset[str] = frozenset(
         "memory.delete",
         # Audit/observability
         "audit.read",
+    # External integrations — read-only Phase 9.1.1 surface
+    "integrations.read",
         # System-level (reserved; never granted to end principals in MVP)
         "system.operate",
     }
