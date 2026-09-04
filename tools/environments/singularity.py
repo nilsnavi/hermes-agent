@@ -251,7 +251,29 @@ class SingularityEnvironment(BaseEnvironment):
         else:
             cmd.extend(["bash", "-c", cmd_string])
 
-        return _popen_bash(cmd, stdin_data)
+        # Apptainer `exec instance://...` inherits the caller's environment
+        # even when the instance itself was started with --containall.
+        #
+        # Hermes gateway may set SSL_CERT_FILE to the host venv's certifi
+        # bundle.  That host-only path is not visible inside the contained
+        # Singularity filesystem, causing curl error 77 and equivalent TLS
+        # failures in Python/Node clients.
+        #
+        # Do not use --cleanenv here: terminal commands intentionally inherit
+        # useful runtime variables such as proxy configuration.  Strip only
+        # host-scoped CA-file overrides and let the container use its own CA
+        # store.  A CA variable explicitly exported *inside* the terminal
+        # session can still persist through BaseEnvironment's shell snapshot.
+        child_env = os.environ.copy()
+        for ca_env_var in (
+            "SSL_CERT_FILE",
+            "REQUESTS_CA_BUNDLE",
+            "CURL_CA_BUNDLE",
+            "NODE_EXTRA_CA_CERTS",
+        ):
+            child_env.pop(ca_env_var, None)
+
+        return _popen_bash(cmd, stdin_data, env=child_env)
 
     def cleanup(self):
         """Stop the instance. If persistent, the overlay dir survives."""
