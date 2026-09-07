@@ -214,9 +214,19 @@ def _create_environment(env_type: str, image: str, cwd: str, timeout: int,
     """Create an execution environment (instance with ``execute()``) for *env_type*. ``image`` is ignored
     for local/ssh/vercel; ``container_config`` carries the container_*/docker_* resource keys; ``host_cwd`` is
     the host dir bound into Docker when cwd mounting is enabled. Unknown types fall through to plugin backends."""
-    builder = _ENV_BUILDERS.get(env_type, _build_plugin_env)
-    return builder(env_type=env_type, image=image, cwd=cwd, timeout=timeout, cc=container_config or {},
-                   task_id=task_id, ssh_config=ssh_config, host_cwd=host_cwd)
+    builder = _ENV_BUILDERS.get(env_type)
+    kwargs = dict(
+        image=image,
+        cwd=cwd,
+        timeout=timeout,
+        cc=container_config or {},
+        task_id=task_id,
+        ssh_config=ssh_config,
+        host_cwd=host_cwd,
+    )
+    if builder is not None:
+        return builder(**kwargs)
+    return _build_plugin_env(env_type=env_type, **kwargs)
 
 
 # --- Requirement checkers: one generic path driven by _BACKEND_SPECS; optional fields, checked in order:
