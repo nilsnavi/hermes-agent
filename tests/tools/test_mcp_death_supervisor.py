@@ -819,3 +819,78 @@ def test_no_pgids_is_a_no_op(monkeypatch):
     mcp_tool._update_death_supervisor("register", [])
 
     assert spawned == []
+
+
+def test_supervisor_survives_service_sigterm_until_parent_pipe_eof(monkeypatch):
+    """Install TERM immunity before blocking on the parent control pipe.
+
+    systemd KillMode=control-group sends SIGTERM to Hermes, stdio MCP
+    children, and the death supervisor together. The supervisor must
+    already ignore SIGTERM when it enters _serve(), otherwise it can die
+    before parent EOF gives it the chance to reap surviving MCP groups.
+    """
+    installed = []
+
+    monkeypatch.setattr(
+        mcp_death_supervisor.os,
+        "getpgid",
+        lambda _pid: 7001,
+    )
+
+    def fake_signal(sig, handler):
+        installed.append((sig, handler))
+
+    monkeypatch.setattr(
+        mcp_death_supervisor.signal,
+        "signal",
+        fake_signal,
+    )
+
+    served = []
+
+    def fake_serve(stream, *, own_pgid, parent_pgid):
+        # This assertion is deliberately INSIDE _serve:
+        # the signal policy must exist before the supervisor
+        # starts waiting for EOF from its parent.
+        assert (
+            mcp_death_supervisor.signal.SIGTERM,
+            mcp_death_supervisor.signal.SIG_IGN,
+        ) in installed
+
+        assert own_pgid == 7001
+        assert parent_pgid == 7002
+
+        served.append(True)
+        return set()
+
+    monkeypatch.setattr(
+        mcp_death_supervisor,
+        "_serve",
+        fake_serve,
+    )
+
+    reaped = []
+
+    monkeypatch.setattr(
+        mcp_death_supervisor,
+        "_reap",
+        lambda pgids: reaped.append(set(pgids)),
+    )
+
+    rc = mcp_death_supervisor.main(
+        ["--parent-pgid", "7002"]
+    )
+
+    assert rc == 0
+    assert served == [True]
+    assert reaped == [set()]
+
+    for sig in (
+        mcp_death_supervisor.signal.SIGINT,
+        mcp_death_supervisor.signal.SIGHUP,
+        mcp_death_supervisor.signal.SIGTERM,
+    ):
+        assert (
+            sig,
+            mcp_death_supervisor.signal.SIG_IGN,
+        ) in installed
