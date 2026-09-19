@@ -29,6 +29,16 @@ hermes_core/
 
 `SessionService` владеет create/resume/close и lease generation, но принимает `PersistencePort`. `ExecutionService` проверяет базовый контракт имени и передаёт вызов `ToolExecutorPort`; subprocess, registry и approval implementation находятся вне слоя. `DeliveryService` проводит pending → attempting → delivered/failed и получает только `DeliveryPort`. `ProviderRouter` возвращает `RouteDecision` с provider, model, endpoint, api_mode, credential reference и route purpose; SDK и секреты ему неизвестны.
 
+### Hardened contracts
+
+- `Session.generation` — версия изменений состояния сессии; `Session.lease_generation` — версия владения lease. Методы `acquire_lease()` и `release_lease()` используют отдельный lease generation для защиты от устаревших владельцев. Метод `close(owner, lease_generation)` разрешает закрытие только текущему владельцу lease и не позволяет stale owner изменить активную сессию.
+
+- `DeliveryResult` — immutable результат транспорта с `success`, `external_id`, `retryable` и `error`. `DeliveryService` переводит delivery obligation в `delivered` только после подтверждённого успешного результата. Retry decision остаётся ответственностью будущего orchestration слоя.
+
+- `ToolExecutionContext` — immutable контекст вызова, содержащий `session_id`, `turn_id`, `tool_call_id`, `capability_grant` и `approved`. `ToolExecutorPort` принимает полный контекст выполнения вместо отдельного boolean-флага.
+
+- `RouteDecision` остаётся `@dataclass(frozen=True)`. В маршрут передаётся только `credential_reference`; реальные секреты и SDK clients остаются вне application/domain слоя.
+
 ## 2. Dependency rules
 
 Направление зависимостей:
@@ -40,6 +50,8 @@ ports/interfaces → application services → domain values/state → infrastruc
 Domain-модули используют только стандартную библиотеку и собственные типы. Application-модули зависят от domain и Protocol-портов. В `hermes_core` запрещены импорты gateway, `hermes_state`, `sqlite3`, `os.environ`, provider SDK, FastAPI, platform adapters, subprocesses и существующих tool registries. Infrastructure adapters в будущем реализуют порты снаружи этого слоя.
 
 Порты описывают capability, а не реализацию: `PersistencePort` не раскрывает SQLite connection/WAL; `ProviderPort` не возвращает SDK client; `DeliveryPort` не решает, когда obligation считается acknowledged; `ToolExecutorPort` не исполняет команды сам. Профиль, authorization и OS isolation должны передаваться через явные контексты будущих адаптеров, а не выводиться из process environment.
+
+Concurrency assumptions: один lease owner изменяет конкретную сессию за раз; устаревший owner обязан получить `False` от `release_lease()` или `close()` при несовпадении `lease_generation`; persistence adapter сериализует сохранение и обеспечивает атомарность своих операций.
 
 ## 3. Current runtime compatibility
 
@@ -58,8 +70,10 @@ Domain state намеренно отражает важные текущие к�
 5. Подключить `ExecutionService` к существующим inline/registry путям только после parity-проверок approval, hooks, concurrent scheduling и result persistence.
 6. Подключить `RuntimeApplication` к одной поверхности за раз (сначала изолированный controller), затем gateway/TUI/cron; удалить старые владельцы только после receipts и rollback proof.
 
+Contract hardening precedes every adapter: сначала адаптеры должны научиться сохранять отдельные session/lease generations, возвращать `DeliveryResult`, передавать immutable `ToolExecutionContext` и строить полный immutable `RouteDecision`; только после этого возможна интеграция с прежними runtime владельцами.
+
 Каждый шаг обязан проходить `scripts/run_tests.sh` для затронутого домена, real-import checks с временным `HERMES_HOME`, применимые lifecycle/security gates и paired evals. До подключения новый пакет остаётся пассивным архитектурным контрактом.
 
 ## Validation performed
 
-После создания слоя выполнена проверка импорта всех новых модулей и компиляции Python-файлов. Проверки production runtime и существующая тестовая suite этим заданием не запускались и не изменялись.
+После hardening выполнены `python -m compileall hermes_core`, импорт всех новых модулей и проверка отсутствия импортов `gateway`, `hermes_state`, `sqlite` и provider SDK. Проверки production runtime и существующая тестовая suite этим заданием не запускались и не изменялись.
