@@ -474,7 +474,7 @@ Priority:
 
 \---
 
-\## 7. Hermes Core Contract Regression
+\## 8. Hermes Core Contract Regression
 
 
 
