@@ -220,3 +220,7 @@ native/fts5_cjk/*.so
 
 # Disposable profile created by scripts/probe_active_session_exclusivity.py
 .probe-home/
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
