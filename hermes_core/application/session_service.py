@@ -24,15 +24,17 @@ class SessionService:
             raise LookupError(f"unknown session key: {key.value}")
         return session
 
-    def close(self, session: Session) -> None:
-        session.close()
-        self._persistence.sessions.save(session)
+    def close(self, session: Session, owner: str, generation: int) -> bool:
+        closed = session.close(owner, generation)
+        if closed:
+            self._persistence.sessions.save(session)
+        return closed
 
     def acquire(self, session: Session, owner: str) -> int:
         if not session.acquire_lease(owner):
             raise RuntimeError("session is already owned or closed")
         self._persistence.sessions.save(session)
-        return session.generation
+        return session.lease_generation
 
     def release(self, session: Session, owner: str, generation: int) -> bool:
         released = session.release_lease(owner, generation)

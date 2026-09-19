@@ -11,6 +11,14 @@ class DeliveryState(str, Enum):
     FAILED = "failed"
 
 
+@dataclass(frozen=True)
+class DeliveryResult:
+    success: bool
+    external_id: str | None = None
+    retryable: bool = False
+    error: str | None = None
+
+
 @dataclass
 class Delivery:
     obligation_id: str
