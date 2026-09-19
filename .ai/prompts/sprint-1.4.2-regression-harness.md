@@ -408,7 +408,25 @@ Document must contain:
 
 \## 6. Migration Gates
 
+Additional section:
 
+
+
+\## 7. Hermes Core Contract Validation
+
+
+
+Document:
+
+
+
+\- domain contract tests
+
+\- application service tests
+
+\- port compatibility checks
+
+\- adapter migration gates
 
 
 
@@ -456,6 +474,118 @@ Priority:
 
 \---
 
+\## 7. Hermes Core Contract Regression
+
+
+
+Analyze new isolated architecture layer:
+
+
+
+hermes\_core/
+
+
+
+
+
+Validate:
+
+
+
+
+
+\### Session Contract
+
+
+
+
+
+Required scenarios:
+
+
+
+\- session creation
+
+\- lease acquisition
+
+\- lease release by owner
+
+\- stale lease rejection
+
+\- close by current lease owner
+
+\- close rejection by stale owner
+
+\- generation increment rules
+
+\- lease\_generation isolation
+
+
+
+
+
+\### Delivery Contract
+
+
+
+
+
+Validate:
+
+
+
+\- DeliveryResult semantics
+
+\- success handling
+
+\- failed delivery handling
+
+\- retryable failures
+
+\- delivery state transitions
+
+
+
+
+
+\### Tool Execution Contract
+
+
+
+
+
+Validate:
+
+
+
+\- ToolExecutionContext creation
+
+\- immutable context behavior
+
+\- capability grant propagation
+
+\- approval boundary
+
+
+
+
+
+\### Routing Contract
+
+
+
+
+
+Validate:
+
+
+
+\- immutable RouteDecision
+
+\- provider precedence
+
+\- credential reference isolation
+
 
 
 \# Acceptance Criteria
@@ -481,4 +611,13 @@ Priority:
 
 
 ✓ Migration safety criteria defined
+✓ Existing runtime remains authoritative
+
+
+
+✓ hermes\_core remains isolated
+
+
+
+✓ Migration can be validated without runtime replacement
 
