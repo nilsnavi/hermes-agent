@@ -25,7 +25,8 @@ def test_execution_service_forwards_exact_tool_arguments_and_logical_context() -
     result = service.invoke(
         "read_file",
         arguments,
-        session_id="session-1",
+            session_id="session-1",
+            principal_id="principal-1",
         turn_id="turn-2",
         tool_call_id="call-3",
         capability_grant="grant:session-1:read",
@@ -46,21 +47,21 @@ def test_execution_service_forwards_exact_tool_arguments_and_logical_context() -
     )
 
 
-def test_execution_context_preserves_unapproved_state_without_enforcing_it() -> None:
+def test_unapproved_protected_execution_is_denied_before_executor() -> None:
     executor = RecordingExecutor()
 
-    ExecutionService(executor).invoke(
-        "inspect",
-        {},
+    with pytest.raises(PermissionError, match="missing_grant"):
+        ExecutionService(executor).invoke_protected(
+            "inspect",
+            {},
         session_id="session-1",
+        principal_id="principal-1",
         turn_id="turn-1",
         tool_call_id="call-1",
-        capability_grant=None,
-        approved=False,
-    )
-
-    assert executor.calls[0][2].approved is False
-    assert executor.calls[0][2].capability_grant is None
+            grant=None,
+            approved=False,
+            )
+    assert executor.calls == []
 
 
 def test_tool_execution_context_is_immutable() -> None:
