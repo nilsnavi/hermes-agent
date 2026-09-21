@@ -8,6 +8,7 @@ import pytest
 
 from hermes_core.application.session_service import SessionService
 from hermes_core.domain.session import Session, SessionId, SessionKey, SessionStatus
+from hermes_core.ports.persistence import PersistenceResult, PersistenceStatus
 
 
 def make_session() -> Session:
@@ -32,6 +33,10 @@ class RecordingSessionRepository:
 
     def save(self, session: Session) -> None:
         self.saves.append(session)
+
+    def conditional_save(self, session: Session, expected_generation: int) -> PersistenceResult:
+        self.saves.append(session)
+        return PersistenceResult(PersistenceStatus.SUCCESS, session)
 
     def list_active(self) -> list[Session]:
         return [session for session in self.by_id.values() if session.status is SessionStatus.ACTIVE]
