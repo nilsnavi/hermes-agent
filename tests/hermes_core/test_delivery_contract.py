@@ -6,6 +6,7 @@ import pytest
 
 from hermes_core.application.delivery_service import DeliveryService
 from hermes_core.domain.delivery import Delivery, DeliveryResult, DeliveryState
+from hermes_core.ports.delivery import DeliveryTransportError
 
 
 def make_delivery() -> Delivery:
@@ -106,15 +107,13 @@ def test_success_is_required_before_delivered() -> None:
     assert delivery.state is DeliveryState.FAILED
 
 
-def test_transport_exception_marks_delivery_failed_and_is_re_raised() -> None:
-    transport_error = RuntimeError("transport unavailable")
+def test_ambiguous_transport_exception_enters_unknown_ack_without_retry() -> None:
+    transport_error = DeliveryTransportError("transport unavailable", retryable=True)
     transport = RecordingTransport(error=transport_error)
     delivery = make_delivery()
 
-    with pytest.raises(RuntimeError, match="transport unavailable") as raised:
-        DeliveryService(transport).deliver(delivery)
-
-    assert raised.value is transport_error
-    assert delivery.state is DeliveryState.FAILED
+    result = DeliveryService(transport).deliver_result(delivery)
+    assert result.status.value == "transport_error"
+    assert delivery.state is DeliveryState.UNKNOWN_ACK
     assert delivery.attempts == 1
     assert transport.calls == 1
