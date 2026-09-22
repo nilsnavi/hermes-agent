@@ -321,6 +321,7 @@ DEFAULT_CONFIG = {
         # /output/... inside Docker and emit the host-visible path in MEDIA:, not the container one.
         "docker_volumes": [],
         "docker_mount_cwd_to_workspace": False,  # mount host cwd at /workspace (weakens isolation)
+        "singularity_mount_cwd_to_workspace": False,  # mount host cwd at /workspace (weakens isolation)
         "docker_network": True,  # false = --network=none, no network access from commands
         "docker_extra_args": [],        # Extra flags passed verbatim to docker run
         # /dev/shm size for the Docker sandbox. Docker's 64 MB default silently breaks

@@ -138,9 +138,18 @@ class SingularityEnvironment(BaseEnvironment):
     Session snapshot preserves env vars across calls; CWD persists via in-band stdout markers.
     """
 
-    def __init__(self, image: str, cwd: str = "~", timeout: int = 60, cpu: float = 0,
-                 memory: int = 0, disk: int = 0, persistent_filesystem: bool = False,
-                 task_id: str = "default"):
+    def __init__(
+        self,
+        image: str,
+        cwd: str = "~",
+        timeout: int = 60,
+        cpu: float = 0,
+        memory: int = 0,
+        disk: int = 0,
+        persistent_filesystem: bool = False,
+        task_id: str = "default",
+        host_cwd: Optional[str] = None,
+    ):
         super().__init__(cwd=cwd, timeout=timeout)
         self.executable = _ensure_singularity_available()
         self.image = _get_or_build_sif(image, self.executable)
@@ -151,6 +160,24 @@ class SingularityEnvironment(BaseEnvironment):
         self._overlay_dir: Optional[Path] = None
         self._cpu = cpu
         self._memory = memory
+        self._host_cwd: Optional[str] = None
+
+        if host_cwd:
+            try:
+                workspace = Path(host_cwd).expanduser().resolve()
+                if workspace.is_dir():
+                    self._host_cwd = str(workspace)
+                else:
+                    logger.warning(
+                        "Singularity workspace bind skipped: host cwd is not a directory: %s",
+                        host_cwd,
+                    )
+            except OSError as exc:
+                logger.warning(
+                    "Singularity workspace bind skipped for %s: %s",
+                    host_cwd,
+                    exc,
+                )
 
         if self._persistent:
             # A raw session-key task_id carries colons etc. unsafe in host path components;
@@ -168,6 +195,13 @@ class SingularityEnvironment(BaseEnvironment):
             cmd.extend(["--overlay", str(self._overlay_dir)])
         else:
             cmd.append("--writable-tmpfs")
+
+        if self._host_cwd:
+            cmd.extend(["--bind", f"{self._host_cwd}:/workspace"])
+            logger.info(
+                "Singularity: mounting host cwd at /workspace: %s",
+                self._host_cwd,
+            )
 
         try:
             from tools.credential_files import get_credential_file_mounts, get_skills_directory_mount
@@ -196,7 +230,19 @@ class SingularityEnvironment(BaseEnvironment):
         """Spawn a bash process inside the Singularity instance."""
         if not self._instance_started:
             raise RuntimeError("Singularity instance not started")
-        cmd = [self.executable, "exec", f"instance://{self.instance_id}", *bash_argv(cmd_string, login)]
+        # Apptainer otherwise inherits the host process cwd. Under
+        # --containall --no-home that directory may not exist inside the
+        # container (e.g. /home/hermes), which emits a WARNING into stdout
+        # before the actual command output. Start from guaranteed-safe "/";
+        # BaseEnvironment's wrapped command will cd to the requested cwd.
+        cmd = [
+            self.executable,
+            "exec",
+            "--cwd",
+            "/",
+            f"instance://{self.instance_id}",
+            *bash_argv(cmd_string, login),
+        ]
         return _popen_bash(cmd, stdin_data)
 
     def cleanup(self):

@@ -494,31 +494,76 @@ def _lookup_active_env(effective_task_id: str, task_id: Optional[str]):
 
 
 def _resolve_task_host_cwd(config: Dict[str, Any], task_id: Optional[str]) -> Optional[str]:
-    """Host directory to bind-mount at ``/workspace`` for *task_id*'s container.
+    """Host directory to bind-mount at ``/workspace`` for a supported container.
 
-    Single owner of the cwd-mount policy for every creation site. Shared-
-    container mode: the ``TERMINAL_CWD``-derived ``config["host_cwd"]``.
-    Per-session isolation (docker + ``container_persistent: false``): only
-    the SESSION's own registered workspace may mount — the process env var is
-    a launch artifact that outlives the session that set it, so deriving a
-    fresh session's mount from it would leak the previous session's directory.
-    Overrides tagged ``cwd_source: "process"`` are refused for the same reason;
-    ``cwd_source: "session"`` or untagged (ACP/RL) overrides mount.
+    Docker preserves its existing workspace policy. Singularity opts in
+    independently and never promotes a process-derived session cwd into a bind.
     """
-    if config.get("env_type") != "docker" or not config.get("docker_mount_cwd_to_workspace"):
-        return None
-    # Top-level CLI parent ("default") is a single-session process — legacy behavior.
-    if not _docker_session_isolation_enabled() or _resolve_container_task_id(task_id) == "default":
-        return config.get("host_cwd")
-    overrides = resolve_task_overrides(task_id)
-    candidate = overrides.get("cwd")
-    if overrides.get("cwd_source") == "process" or not isinstance(candidate, str) or not candidate.strip():
-        return None
-    candidate = os.path.abspath(os.path.expanduser(candidate))
-    # Must exist on the host and not already be an in-container path.
-    if not os.path.isdir(candidate) or candidate.startswith(("/workspace", "/root")):
-        return None
-    return candidate
+    env_type = config.get("env_type")
+
+    if env_type == "docker":
+        if not config.get("docker_mount_cwd_to_workspace"):
+            return None
+
+        # Preserve the pre-existing Docker semantics exactly.
+        if (
+            not _docker_session_isolation_enabled()
+            or _resolve_container_task_id(task_id) == "default"
+        ):
+            return config.get("host_cwd")
+
+        overrides = resolve_task_overrides(task_id)
+        candidate = overrides.get("cwd")
+
+        if (
+            overrides.get("cwd_source") == "process"
+            or not isinstance(candidate, str)
+            or not candidate.strip()
+        ):
+            return None
+
+        candidate = os.path.abspath(os.path.expanduser(candidate))
+
+        if (
+            not os.path.isdir(candidate)
+            or candidate.startswith(("/workspace", "/root"))
+        ):
+            return None
+
+        return candidate
+
+    if env_type == "singularity":
+        if not config.get("singularity_mount_cwd_to_workspace"):
+            return None
+
+        effective_task_id = _resolve_container_task_id(task_id)
+        overrides = resolve_task_overrides(task_id)
+
+        if overrides:
+            candidate = overrides.get("cwd")
+
+            if (
+                overrides.get("cwd_source") == "process"
+                or not isinstance(candidate, str)
+                or not candidate.strip()
+            ):
+                return None
+
+            candidate = os.path.abspath(os.path.expanduser(candidate))
+
+            if (
+                not os.path.isdir(candidate)
+                or candidate.startswith(("/workspace", "/root"))
+            ):
+                return None
+
+            return candidate
+
+        # CLI/no-session fallback only; session/process artifacts are handled above.
+        if effective_task_id == "default":
+            return config.get("host_cwd")
+
+    return None
 
 
 # One-shot guard for the config-fallback bridge: after the first attempt
@@ -565,7 +610,11 @@ def _ensure_terminal_env_bridged() -> None:
 _DEFAULT_CWD_BY_BACKEND = {"ssh": "~", "vercel_sandbox": _VERCEL_SANDBOX_DEFAULT_CWD}
 
 
-def _resolve_config_cwd(env_type: str, mount_docker_cwd: bool) -> tuple:
+def _resolve_config_cwd(
+    env_type: str,
+    mount_docker_cwd: bool,
+    mount_singularity_cwd: bool = False,
+) -> tuple:
     """``(cwd, host_cwd)`` from TERMINAL_CWD for *env_type*.
 
     Container backends are sanity-checked: with Docker cwd passthrough the host
@@ -578,8 +627,15 @@ def _resolve_config_cwd(env_type: str, mount_docker_cwd: bool) -> tuple:
     if cwd and not _is_ssh_remote_tilde_cwd(env_type, cwd):
         cwd = os.path.expanduser(cwd)
     host_cwd = None
-    if env_type == "docker" and mount_docker_cwd:
-        candidate = os.path.abspath(os.path.expanduser(_tenv("TERMINAL_CWD") or _safe_getcwd()))
+    mount_cwd_to_workspace = (
+        (env_type == "docker" and mount_docker_cwd)
+        or (env_type == "singularity" and mount_singularity_cwd)
+    )
+
+    if mount_cwd_to_workspace:
+        candidate = os.path.abspath(
+            os.path.expanduser(_tenv("TERMINAL_CWD") or _safe_getcwd())
+        )
         if (
             _is_host_cwd(candidate)
             or (os.path.isabs(candidate) and os.path.isdir(candidate) and not candidate.startswith(("/workspace", "/root")))
@@ -599,7 +655,12 @@ def _get_env_config() -> Dict[str, Any]:
     default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
     _ensure_terminal_env_bridged()
     env_type = _tenv("TERMINAL_ENV", "local")
-    mount_docker_cwd = _tenv_bool("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false")
+    mount_docker_cwd = _tenv_bool(
+        "TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false"
+    )
+    mount_singularity_cwd = _tenv_bool(
+        "TERMINAL_SINGULARITY_MOUNT_CWD_TO_WORKSPACE", "false"
+    )
 
     # Container/docker-only payloads are parsed only when such a backend is
     # selected: a stale or invalid Docker value bridged from config.yaml must
@@ -620,7 +681,11 @@ def _get_env_config() -> Dict[str, Any]:
     else:
         docker_forward_env, docker_volumes, docker_env, docker_extra_args, docker_shm_size = [], [], {}, [], "1g"
 
-    cwd, host_cwd = _resolve_config_cwd(env_type, mount_docker_cwd)
+    cwd, host_cwd = _resolve_config_cwd(
+        env_type,
+        mount_docker_cwd,
+        mount_singularity_cwd,
+    )
 
     return {
         "env_type": env_type,
@@ -634,6 +699,7 @@ def _get_env_config() -> Dict[str, Any]:
         "cwd": cwd,
         "host_cwd": host_cwd,
         "docker_mount_cwd_to_workspace": mount_docker_cwd,
+        "singularity_mount_cwd_to_workspace": mount_singularity_cwd,
         "timeout": _parse_env_var("TERMINAL_TIMEOUT", "180"),
         "lifetime_seconds": _parse_env_var("TERMINAL_LIFETIME_SECONDS", "300"),
         # SSH-specific config
