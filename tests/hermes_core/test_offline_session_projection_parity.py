@@ -389,3 +389,110 @@ def test_sp12_real_adapter_fields_preserve_types_and_session_isolation(tmp_path)
     finally:
         reader.close()
     assert _file_digest(path) == before
+
+
+def test_sp13_real_omitted_optional_arguments_preserve_nulls_and_defaults(tmp_path):
+    from hermes_state import SessionDB
+
+    path = tmp_path / "optional-state.db"
+    writer = SessionDB(path)
+    try:
+        writer.create_session("optional", "local", profile_name="offline")
+    finally:
+        writer.close()
+    before = _file_digest(path)
+    reader = SessionDB(path, read_only=True)
+    try:
+        row = reader.get_session("optional")
+        snapshot = deepcopy(row)
+        assert row["id"] == "optional" and row["session_key"] is None
+        assert row["parent_session_id"] is None
+        core, adapter = project_detached(row)
+        assert core.session_id.value == core.key.value == row["id"]
+        assert core.parent_session_id is None
+        assert row["ended_at"] is None and core.status is SessionStatus.ACTIVE
+        for field in (
+            "model", "model_config", "system_prompt", "user_id", "chat_id",
+            "chat_type", "thread_id", "origin_json", "display_name", "cwd",
+            "git_repo_root", "ended_at", "end_reason",
+        ):
+            assert field in row and row[field] is None
+            assert field in adapter and adapter[field] is None
+        for field in ("expiry_finalized", "message_count", "archived"):
+            assert type(row[field]) is int and row[field] == 0
+            assert type(adapter[field]) is int and adapter[field] == row[field]
+        assert project_detached(reader.get_session("optional")) == (core, adapter)
+        assert row == snapshot == reader.get_session("optional")
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+    assert _file_digest(path) == before
+
+
+def test_sp17_real_repeated_projection_is_deterministic(tmp_path):
+    path, before, reader = _legacy_lineage_fixture(tmp_path)
+    try:
+        row = reader.get_session("child")
+        snapshot = deepcopy(row)
+        first = project_detached(row)
+        second = project_detached(row)
+        third = project_detached(reader.get_session("child"))
+        assert first == second == third
+        assert first[0].session_id.value == row["id"]
+        assert first[0].key.value == row["session_key"]
+        assert first[0].parent_session_id.value == row["parent_session_id"]
+        assert first[0].status is SessionStatus.ACTIVE and row["ended_at"] is None
+        assert first[0].metadata == {"source": row["source"]}
+        assert first[0] is not second[0] and second[0] is not third[0]
+        assert first[0].metadata is not second[0].metadata
+        assert second[0].metadata is not third[0].metadata
+        assert first[1] is not second[1] and second[1] is not third[1]
+        first[0].metadata.clear()
+        first[1].clear()
+        assert second == third == project_detached(reader.get_session("child"))
+        assert row == snapshot == reader.get_session("child")
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+    assert _file_digest(path) == before
+
+
+def test_sp18_real_detached_mutations_leave_source_and_peer_projection_unchanged(tmp_path):
+    path, before, reader = _legacy_lineage_fixture(tmp_path)
+    try:
+        row = reader.get_session("child")
+        snapshot = deepcopy(row)
+        changed = project_detached(row)
+        independent = project_detached(row)
+        expected = deepcopy(independent)
+        assert all(value is None or type(value) in (str, int, float, bytes) for value in row.values())
+        changed[0].metadata["source"] = "detached-source"
+        changed[1]["profile_name"] = "detached-profile"
+        changed[1].pop("started_at")
+        assert row == snapshot == reader.get_session("child")
+        assert independent == expected == project_detached(reader.get_session("child"))
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+    assert _file_digest(path) == before
+
+
+def test_sp14_helper_only_invalid_identity_rejection_is_repeatable_and_nonmutating():
+    for row in ({"source": "local"}, {"id": None}, {"id": ""}, {"id": 123}):
+        snapshot = deepcopy(row)
+        for _ in range(2):
+            with pytest.raises(ValueError) as failure:
+                project_detached(row)
+            assert str(failure.value) == "missing_required_identity"
+            assert row == snapshot
+
+
+def test_sp15_helper_only_invalid_ended_at_rejection_is_repeatable_and_nonmutating():
+    for value in ("invalid", [], {}):
+        row = {"id": "helper-only", "ended_at": value}
+        snapshot = deepcopy(row)
+        for _ in range(2):
+            with pytest.raises(ValueError) as failure:
+                project_detached(row)
+            assert str(failure.value) == "malformed_lifecycle"
+            assert row == snapshot

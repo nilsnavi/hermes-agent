@@ -225,3 +225,67 @@ Current MATCH: SP1, SP2, SP7, SP9, SP12, SP19, SP20. SP3–SP6, SP8, SP10–SP11
 - B — `PARTIAL`: legacy collection remains blocked; complete regression, performance, rollback and operational evidence is absent.
 
 Phase 0 is `AUTHORIZED` for offline/isolated validation only. Phase 1–4 are `NOT_AUTHORIZED`. Production migration remains **NO-GO**. No production HERMES_HOME/user DB, credentials/network, provider/tool/delivery execution, runtime wiring, ownership transfer or shadow/canary/cutover was used. No commit or push was performed.
+
+## Sprint 1.5.14 — Projection Robustness Parity
+
+Explicit baseline and verified starting HEAD: `e76490db3887f17a29f5abe8f7fc1fbb67cc891c`; initial working tree was clean. The older `50ccd568e5d641d6471ee764e554d4a3460e7f3a` in `.ai/prompts/sprint-1.5.14-projection-robustness-parity.md` was not checked out. No checkout/reset, commit or push was performed. This appended generation preserves all previous evidence, including Sprint 1.5.10–1.5.13.
+
+### Inspection: optional, required and lifecycle fields
+
+Inspected before implementation: the existing test/evidence files, original SP13–SP18 definitions in `.ai/prompts/sprint-1.5.10-offline-session-projection-parity.md`, `hermes_state_common.py::SCHEMA_SQL`, `hermes_state_sessions.py::SessionSessionsMixin._insert_session_row`, `create_session`, `get_session`, `end_session`, `reopen_session`, `hermes_state.py::SessionDB._session_row_dict`, and `hermes_core/domain/session.py::Session`. Findings apply to the explicit baseline above.
+
+- Optional arguments such as model/config/prompt, user/chat/thread/origin/display, cwd/git and parent may be omitted. Real rows retain the schema keys with NULL values; omission of a Python dictionary key is not the authoritative representation. Counters/flags have real defaults. SP13 supplies an explicit isolated profile and does not claim coverage of omitted profile derivation.
+- `session_key` is nullable in the schema and optional in the creation API. The existing helper uses the real nonempty `id` when this key is NULL. This is not a fabricated identity and does not establish SP14 missing-identity coverage.
+- `create_session` requires a `session_id` argument annotated `str`; the inspected insert forwards it without an explicit nonempty-string validation. The schema says `id TEXT PRIMARY KEY`, not an explicit `NOT NULL`/nonempty CHECK. `get_session` selects by ID and `_session_row_dict` preserves the selected columns; a missing lookup returns None, not a malformed session row. These findings do not prove all malformed identities impossible. No malformed-ID persisted/read path was executed; SP14 remains UNVERIFIED rather than asserting NOT_APPLICABLE from the PRIMARY KEY declaration alone.
+- Authoritative lifecycle uses nullable `ended_at REAL` and `end_reason TEXT`; no legacy `status` column exists. Creation leaves terminal fields NULL; `end_session` stamps `time.time()` and reopening clears them. These APIs do not expose an arbitrary `ended_at` input. The inspected schema has no explicit lifecycle type CHECK, so API inspection is not proof against every malformed stored value. No supported malformed lifecycle execution was established: SP15 remains UNVERIFIED, not NOT_APPLICABLE.
+- `project_detached` was not changed: `ended_at is None` maps to ACTIVE; numeric authoritative ended snapshots map to CLOSED. Existing helper identity/type rejection remains intact. No SQL corruption, custom schema, monkeypatched legacy values or production semantic changes were used.
+
+### Authoritative paired evidence
+
+All authoritative tests use real `hermes_state.SessionDB`, temporary `tmp_path` storage and the existing isolated `HERMES_HOME` fixture. Fixture setup uses supported creation APIs. After writer close, reads use a real read-only SessionDB handle. Existing MATCH assertions are unchanged.
+
+| Scenario | Classification | Exact test and evidence |
+|---|---|---|
+| SP13 missing optional fields | MATCH | `test_sp13_real_omitted_optional_arguments_preserve_nulls_and_defaults`: real `create_session("optional", "local", profile_name="offline")` omits optional arguments. Actual `get_session` has a valid ID, NULL key/parent, NULL optional metadata and integer defaults. Projection retains identity, derives a valid key from that same ID, preserves NULL/default adapter fields, remains ACTIVE, repeats equivalently and leaves the source/reread unchanged. |
+| SP14 missing required identity | UNVERIFIED | No authoritative malformed-identity row was projected. The helper-only rejection test below is not legacy parity; absence of a schema/API impossibility proof also prevents NOT_APPLICABLE. |
+| SP15 malformed lifecycle/status | UNVERIFIED | No real malformed `ended_at` row was produced through supported APIs. Helper-only invalid-type rejection is not paired parity. No fabricated `status` field or direct SQL was used to manufacture a MATCH. |
+| SP17 repeated projection determinism | MATCH | `test_sp17_real_repeated_projection_is_deterministic`: `_legacy_lineage_fixture` creates actual parent/child rows. Two projections of the same authoritative child and one of a fresh equivalent read have equal complete core objects and adapter envelopes. ID/key/parent/status/source are checked explicitly. Core objects, metadata dictionaries and envelopes are independent; clearing the first projection leaves the other two and a fresh projection equal. Source and reread remain unchanged. |
+| SP18 detached-output mutation isolation | MATCH | `test_sp18_real_detached_mutations_leave_source_and_peer_projection_unchanged`: two projections of the same real child row are independent. Changing core source metadata, replacing adapter profile and removing its timestamp cannot alter the original source snapshot, a fresh authoritative read, or the other projection. |
+
+SP17's helper implementation uses only the loaded values and fixed core defaults, not a clock/random/environment lookup. The test compares complete outputs and demonstrates independent mutable containers; it does not claim cross-version or every-environment determinism. SP18's authoritative rows contain SQLite scalars/serialized JSON text. No nested authoritative mutable-object isolation is claimed; only the mutable core metadata and adapter envelope actually present at this boundary are exercised.
+
+No-write proof for SP13/SP17/SP18: baseline main-DB SHA-256 is captured after fixture writer close; it is unchanged during read/projection and after reader close. Original row snapshots equal authoritative rereads, including after detached mutations. This is bounded database-content evidence, not a guarantee of no SQLite sidecar activity or production mutation fencing.
+
+### Helper-only robustness evidence — excluded from MATCH totals
+
+- `test_sp14_helper_only_invalid_identity_rejection_is_repeatable_and_nonmutating`: hand-built missing/None/empty/non-string IDs each raise exactly `ValueError("missing_required_identity")` on two attempts; inputs remain unchanged. No valid Session or fallback identity is returned.
+- `test_sp15_helper_only_invalid_ended_at_rejection_is_repeatable_and_nonmutating`: hand-built string/list/dict `ended_at` values each raise exactly `ValueError("malformed_lifecycle")` repeatedly, without source mutation. This covers those invalid types, not every conceivable malformed numeric value.
+- Earlier hand-built helper tests and the generic twenty-label smoke test are not promoted into authoritative SP14/SP15 evidence. SP17/SP18 classifications use the real SessionDB tests listed above.
+
+### Validation receipts
+
+| Check | Exact command | Executed result |
+|---|---|---|
+| Focused | `C:\Python314\python.exe -m pytest tests/hermes_core/test_offline_session_projection_parity.py --confcutdir=tests/hermes_core -q -ra` | 35 passed, 0 failed, 0 skipped; 1 `PytestCacheWarning` (WinError 183); 18.37s; exit 0 |
+| Full core | `C:\Python314\python.exe -m pytest tests/hermes_core --confcutdir=tests/hermes_core -q -ra` | 217 passed, 0 failed, 0 skipped; 1 `PytestCacheWarning` (WinError 183); 20.04s; exit 0 |
+| Compileall | `C:\Python314\python.exe -m compileall hermes_core` | PASS; exit 0 |
+| Canonical | `& 'C:\Program Files\Git\bin\bash.exe' -lc 'export PATH=/usr/bin:/bin:$PATH; export HERMES_PYTHON=/c/Python314/python.exe; scripts/run_tests.sh tests/hermes_core --confcutdir=tests/hermes_core'` | 12 files, 217 passed, 0 failed, 100% complete; 34.3s; 24 workers; exit 0. No skips/retries reported; successful per-file output is summarized, so zero warnings is not claimed. The initial ~191 estimate is not the executed count. |
+| Safe legacy selector | `C:\Python314\python.exe -m pytest tests/tui_gateway/test_session_resume_db_ownership.py -q -ra` | COLLECTION ERROR; 0 behavioral tests executed; 1 collection error, 2 `PytestCacheWarning` warnings (WinError 183); 1.62s; exit 1 |
+
+Safe-selector failure: `ModuleNotFoundError: No module named 'concurrent_log_handler'`, through `tests/tui_gateway/test_session_resume_db_ownership.py → tui_gateway/server.py → agent/conversation_loop.py → hermes_logging.py → concurrent_log_handler`. This is an infrastructure/collection blocker, not a behavioral assertion failure. Cache warnings concern `.pytest_cache/v/cache` creation and are not behavioral failures. Supported Python/installed pytest were used with approved access; no dependency installation or bypass was performed.
+
+### Current parity and readiness
+
+| Evidence generation | MATCH | INTENTIONAL_DELTA | UNVERIFIED | NOT_APPLICABLE |
+|---|---:|---:|---:|---:|
+| Sprint 1.5.14 targeted SP13/SP14/SP15/SP17/SP18 | 3 | 0 | 2 | 0 |
+| Current SP1–SP20 after Sprint 1.5.14 | 10 | 0 | 10 | 0 |
+
+Current MATCH: SP1, SP2, SP7, SP9, SP12, SP13, SP17, SP18, SP19, SP20. UNVERIFIED: SP3–SP6, SP8, SP10, SP11, SP14, SP15, SP16. SP8 was not reclassified; SP16 was not targeted. Historical totals/receipts remain in their original generations.
+
+- B1 — `PARTIALLY_ADDRESSED`: deterministic detached projection does not establish transactional mutation fencing.
+- B2 — `PARTIALLY_ADDRESSED`: NULL/default preservation and isolation coverage improve; remaining persistence/projection requirements remain unresolved.
+- P — `PARTIAL`: ten scenarios remain UNVERIFIED, including authoritative malformed-state evidence.
+- B — `PARTIAL`: safe legacy collection, complete regression/performance/rollback and operational evidence remain blockers.
+
+Phase 0 remains `AUTHORIZED`; Phase 1, Phase 2, Phase 3 and Phase 4 remain `NOT_AUTHORIZED`. Production migration remains **NO-GO**. Production runtime, real user DBs, production HERMES_HOME, credentials/network, provider/tool/delivery effects, wiring, ownership transfer and shadow/canary/cutover were not used. Changes are confined to appended test/evidence content; no commit or push.
