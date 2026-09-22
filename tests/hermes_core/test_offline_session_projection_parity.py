@@ -65,6 +65,42 @@ def _legacy_db_or_skip(tmp_path: Path):
     return path, before, reader
 
 
+def _legacy_lineage_fixture(tmp_path: Path):
+    try:
+        from hermes_state import SessionDB
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"legacy SessionDB unavailable: {exc.name}")
+    path = tmp_path / "lineage-state.db"
+    writer = SessionDB(path)
+    writer.create_session("parent", "test", session_key="parent-key", profile_name="offline")
+    writer.create_session(
+        "child", "test", session_key="child-key", profile_name="offline",
+        parent_session_id="parent",
+    )
+    writer.close()
+    before = _file_digest(path)
+    reader = SessionDB(path, read_only=True)
+    return path, before, reader
+
+
+def _legacy_multi_fixture(tmp_path: Path):
+    try:
+        from hermes_state import SessionDB
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"legacy SessionDB unavailable: {exc.name}")
+    path = tmp_path / "multi-state.db"
+    writer = SessionDB(path)
+    for index in ("a", "b", "c"):
+        writer.create_session(
+            f"session-{index}", f"source-{index}",
+            session_key=f"key-{index}", profile_name=f"profile-{index}",
+        )
+    writer.close()
+    before = _file_digest(path)
+    reader = SessionDB(path, read_only=True)
+    return path, before, reader
+
+
 def test_projection_is_detached_and_preserves_adapter_metadata():
     row = {"id": "s1", "source": "telegram", "session_key": "k1", "profile_name": "p"}
     core, adapter = project_detached(row)
@@ -116,6 +152,51 @@ def test_real_legacy_no_write_proof_is_executable_when_dependencies_exist(tmp_pa
         project_detached(row)
         with sqlite3.connect(path) as conn:
             assert conn.execute("PRAGMA data_version").fetchone()[0] >= 1
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+
+
+def test_sp2_parent_lineage_uses_authoritative_legacy_fixture(tmp_path):
+    path, before, reader = _legacy_lineage_fixture(tmp_path)
+    try:
+        parent = reader.get_session("parent")
+        child = reader.get_session("child")
+        assert parent is not None and child is not None
+        assert child["parent_session_id"] == parent["id"]
+        projected, adapter = project_detached(child)
+        assert projected.session_id.value == "child"
+        assert projected.parent_session_id is not None
+        assert projected.parent_session_id.value == parent["id"]
+        assert projected.parent_session_id.value != projected.session_id.value
+        assert adapter is not child
+        adapter["profile_name"] = "mutated"
+        assert child["profile_name"] == "offline"
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+
+
+def test_sp20_multiple_authoritative_sessions_are_isolated(tmp_path):
+    path, before, reader = _legacy_multi_fixture(tmp_path)
+    try:
+        rows = [reader.get_session(f"session-{index}") for index in ("a", "b", "c")]
+        assert all(row is not None for row in rows)
+        projections = [project_detached(row) for row in rows]
+        identities = [core.session_id.value for core, _ in projections]
+        keys = [core.key.value for core, _ in projections]
+        assert identities == ["session-a", "session-b", "session-c"]
+        assert keys == ["key-a", "key-b", "key-c"]
+        assert len(set(identities)) == len(identities)
+        assert len(set(keys)) == len(keys)
+        assert [adapter["profile_name"] for _, adapter in projections] == [
+            "profile-a", "profile-b", "profile-c"
+        ]
+        projections[0][1]["profile_name"] = "changed"
+        assert projections[1][1]["profile_name"] == "profile-b"
+        assert projections[2][1]["profile_name"] == "profile-c"
+        repeat, _ = project_detached(reader.get_session("session-a"))
+        assert repeat == projections[0][0]
         assert _file_digest(path) == before
     finally:
         reader.close()
