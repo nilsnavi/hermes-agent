@@ -19,7 +19,7 @@ OFF→SHADOW→CANARY→DRAINING→CUTOVER; rollback is explicit from CANARY/DRA
 Generation-fenced kill switch blocks forward migration. DRAIN_REQUESTED is distinct from DRAINED; cutover requires DRAINED.
 
 ## Rollback/failover
-Rollback is state authorization only and never executes external reversal. Failover is not represented because runtime semantics are UNVERIFIED.
+Rollback is state authorization only and never executes external reversal. Failover is represented by `MigrationController.failover()` but is fail-closed: runtime semantics are UNVERIFIED and the operation returns `FAILOVER_NOT_ALLOWED/failover_unverified` without mutation.
 
 ## Audit and persistence
 AuditEvent is immutable and contains transition/generation/status/owner evidence without secrets. Future persistence must use B1/B2-compatible CAS; no DB adapter is implemented.
