@@ -19,6 +19,12 @@ import pytest
 from hermes_core.domain.session import Session, SessionId, SessionKey, SessionStatus
 
 
+@pytest.fixture(autouse=True)
+def isolated_legacy_home(tmp_path, monkeypatch):
+    # --confcutdir excludes the repository-wide home isolation fixture.
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
+
+
 def project_detached(legacy_row: dict) -> tuple[Session, dict[str, object]]:
     """Project only fields owned by the detached core model.
 
@@ -29,20 +35,20 @@ def project_detached(legacy_row: dict) -> tuple[Session, dict[str, object]]:
     session_id = legacy_row.get("id")
     if not isinstance(session_id, str) or not session_id:
         raise ValueError("missing_required_identity")
-    source_status = legacy_row.get("status", "active")
-    if source_status not in ("active", "closed"):
+    ended_at = legacy_row.get("ended_at")
+    if ended_at is not None and not isinstance(ended_at, (int, float)):
         raise ValueError("malformed_lifecycle")
     core = Session(
         SessionId(session_id),
         SessionKey(legacy_row.get("session_key") or session_id),
-        status=SessionStatus.ACTIVE if source_status == "active" else SessionStatus.CLOSED,
+        status=SessionStatus.ACTIVE if ended_at is None else SessionStatus.CLOSED,
         parent_session_id=(SessionId(legacy_row["parent_session_id"])
                            if legacy_row.get("parent_session_id") else None),
         metadata={"source": legacy_row.get("source", "")},
     )
     adapter = deepcopy({
         key: value for key, value in legacy_row.items()
-        if key not in {"id", "session_key", "parent_session_id", "source", "status"}
+        if key not in {"id", "session_key", "parent_session_id", "source"}
     })
     return core, adapter
 
@@ -131,7 +137,7 @@ def test_projection_rejects_missing_or_malformed_fields():
     with pytest.raises(ValueError, match="missing_required_identity"):
         project_detached({"source": "test"})
     with pytest.raises(ValueError, match="malformed_lifecycle"):
-        project_detached({"id": "s1", "status": "impossible"})
+        project_detached({"id": "s1", "ended_at": "impossible"})
 
 
 def test_repeated_projection_is_deterministic_and_source_unchanged():
@@ -200,3 +206,83 @@ def test_sp20_multiple_authoritative_sessions_are_isolated(tmp_path):
         assert _file_digest(path) == before
     finally:
         reader.close()
+
+
+def test_sp7_ended_session_projects_closed_without_writes(tmp_path):
+    from hermes_state import SessionDB
+
+    path = tmp_path / "terminal-state.db"
+    writer = SessionDB(path)
+    try:
+        writer.create_session("parent", "test", profile_name="offline")
+        writer.create_session(
+            "child", "test", session_key="child-key", profile_name="offline",
+            parent_session_id="parent",
+        )
+        active = writer.get_session("child")
+        assert active["ended_at"] is None and active["end_reason"] is None
+        assert project_detached(active)[0].status is SessionStatus.ACTIVE
+        writer.end_session("child", "session_reset")
+        ended = writer.get_session("child")
+        assert isinstance(ended["ended_at"], (int, float))
+        assert ended["ended_at"] >= active["started_at"]
+        assert ended["end_reason"] == "session_reset"
+    finally:
+        writer.close()
+
+    before = _file_digest(path)
+    reader = SessionDB(path, read_only=True)
+    try:
+        row = reader.get_session("child")
+        assert row == ended
+        source = deepcopy(row)
+        core, adapter = project_detached(row)
+        assert core.status is SessionStatus.CLOSED
+        assert core.session_id.value == row["id"] == active["id"]
+        assert core.key.value == row["session_key"] == active["session_key"]
+        assert core.parent_session_id.value == row["parent_session_id"] == "parent"
+        assert core.parent_session_id.value != core.session_id.value
+        assert adapter["ended_at"] == row["ended_at"]
+        assert adapter["end_reason"] == row["end_reason"]
+        assert adapter["profile_name"] == row["profile_name"]
+        assert project_detached(reader.get_session("child")) == (core, adapter)
+        adapter["end_reason"] = "detached-only"
+        adapter["profile_name"] = "detached-only"
+        core.metadata["source"] = "detached-only"
+        assert row == source == reader.get_session("child")
+        assert reader.get_session("parent")["ended_at"] is None
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+    assert _file_digest(path) == before
+
+
+def test_sp8_expiry_finalized_flag_does_not_establish_expired_or_closed(tmp_path):
+    """Boundary evidence only: the marker API does not execute expiry policy."""
+    from hermes_state import SessionDB
+
+    path = tmp_path / "expiry-marker-state.db"
+    writer = SessionDB(path)
+    try:
+        writer.create_session("marked", "test", profile_name="offline")
+        writer.set_expiry_finalized("marked")
+    finally:
+        writer.close()
+
+    before = _file_digest(path)
+    reader = SessionDB(path, read_only=True)
+    try:
+        row = reader.get_session("marked")
+        source = deepcopy(row)
+        assert row["expiry_finalized"] == 1
+        assert row["ended_at"] is None and row["end_reason"] is None
+        core, adapter = project_detached(row)
+        assert core.status is SessionStatus.ACTIVE
+        assert adapter["expiry_finalized"] == row["expiry_finalized"]
+        assert project_detached(reader.get_session("marked")) == (core, adapter)
+        adapter["expiry_finalized"] = 0
+        assert row == source == reader.get_session("marked")
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+    assert _file_digest(path) == before
