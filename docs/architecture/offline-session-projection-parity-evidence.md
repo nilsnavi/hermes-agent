@@ -289,3 +289,83 @@ Current MATCH: SP1, SP2, SP7, SP9, SP12, SP13, SP17, SP18, SP19, SP20. UNVERIFIE
 - B — `PARTIAL`: safe legacy collection, complete regression/performance/rollback and operational evidence remain blockers.
 
 Phase 0 remains `AUTHORIZED`; Phase 1, Phase 2, Phase 3 and Phase 4 remain `NOT_AUTHORIZED`. Production migration remains **NO-GO**. Production runtime, real user DBs, production HERMES_HOME, credentials/network, provider/tool/delivery effects, wiring, ownership transfer and shadow/canary/cutover were not used. Changes are confined to appended test/evidence content; no commit or push.
+
+## Sprint 1.5.15 — Authoritative Lease Boundary Discovery & Projection Parity
+
+Actual implementation baseline: `0451fdd5d3092d9d753690f28cabf62ac484800b` (verified HEAD; initially clean tree). The older `630bb3b4316cc95ecfccb406fbf20ce3811579b3` in the canonical prompt was not checked out. No reset, production change, commit or push. Prior evidence generations are preserved unchanged.
+
+### Discovery and boundary decision
+
+Decision established before adding tests: **B — separate durable lease authority**, with an additional **C — gateway/process-local serialization layer**. The durable authority is `session_turn_leases` in the real SessionDB database, not the `sessions` row returned by `get_session()`. A is therefore not the selected boundary, and D is false for legacy turn ownership. The existing session-row projection remains untouched; its default core lease fields are not evidence of legacy ownership.
+
+Inspection included the Sprint 1.5.10 scenario definitions; `session-persistence-projection.md`, `session-persistence-hardening-evidence.md`, this evidence document, `runtime-ownership-map.md`, `runtime-audit.md`; `hermes_core/domain/session.py`, `application/session_service.py`, `ports/persistence.py`; core session, persistence-hardening and offline projection tests. Repository searches covered lease/turn lease, owner, generation, fencing, acquire/release, heartbeat, TTL/expires/deadline and stale-owner concepts. Broad Python searches were narrowed to the SessionDB family, gateway and agent consumers, and lease-specific tests. Exact authoritative files found:
+
+- `hermes_state_common.py::SCHEMA_SQL`: `session_turn_leases`, `compression_locks`, `gateway_heartbeats` and session columns.
+- `hermes_state_compression.py::SessionCompressionMixin`: `_session_turn_lease_key_on_conn`, `_session_turn_lease_key`, `try_acquire_session_turn_lease`, `acquire_session_turn_lease`, `refresh_session_turn_lease`, `release_session_turn_lease`; module helper `_claim_lease_row`.
+- `hermes_state_messages.py`: `_TURN_LEASE_ROW_SQL`, `_stale_holder`, holder-fenced transcript write path, conversation generation and transcript-generation logic.
+- `hermes_state.py::_compression_lock_holder_process_is_dead`: only provably dead local PIDs allow early reclaim; the current PID and unstructured holders are not declared dead.
+- `agent/turn_facade_lease.py`: `admit_durable_turn_lease`, `DurableTurnLease`, TTL/refresh behavior. Inspected only; no agent, periodic scheduler or watcher was started.
+- `gateway/turn_lease.py`: `SessionTurnLeaseRegistry`, `_SessionLease`, `TurnLeaseToken`; `gateway/session_state.py`: turn token/generation and persistent `run_generation`; `gateway/run_turn.py::_hmwa_acquire_turn_lease`: passes run generation into the token. Inspected only, not instantiated as a gateway runtime.
+- `hermes_state_registry.py`, `hermes_state_sessions.py`: connection generation, git generation and session expiry distinctions. `tests/state/test_session_turn_lease.py` supplied the narrow supported legacy selector; gateway/run-agent lease test paths were found but not selected for runtime execution.
+
+### Exact representations and semantic limits
+
+| Concept | Authoritative representation / finding |
+|---|---|
+| Durable scope | `conversation_id TEXT PRIMARY KEY`; resolved inside the write transaction by walking compression lineage. Explicit forks remain independent. Not necessarily a routing key or the current compressed segment ID. New parity tests use a root session only. |
+| Durable owner | `holder TEXT NOT NULL`, an opaque turn token. Runtime admission constructs `pid=<pid>:turn=<relay_turn_id>:platform=<platform-or-unknown>`. The tests use supported current-process `pid=...:turn=...` tokens and acquire only temporary fixture leases. |
+| Acquisition/fencing | `_claim_lease_row` reclaims expired/dead holders, INSERT OR IGNOREs, then confirms the holder in one transaction. Refresh and release qualify by conversation ID plus holder. Transcript writes likewise check the holder in their write transaction. No durable integer epoch column exists here. |
+| Lease expiry | `acquired_at REAL NOT NULL`, `expires_at REAL NOT NULL`; acquisition computes `time.time() + max(0.1, float(ttl_seconds))`. Default TTL is 300s. Runtime refresher defaults to 60s. Expiry makes a row reclaimable; matching-holder refresh/transcript renewal can revive a still-unclaimed row. This is not immediate deletion or unconditional revocation. |
+| Waiting vs expiry | `acquire_session_turn_lease` uses a monotonic wait deadline (default 1800s); this is the contender's waiting budget, not the owner's TTL. Gateway registry wait timeout defaults to 5s and also does not expire its owner. |
+| Unleased state | No durable row for the resolved conversation key, including after owner-qualified DELETE. A retained expired row is a different/reclaimable state, not the tested absent-row representation. Process-local registry uses no holder/unlocked idle state. |
+| Process-local owner | `TurnLeaseToken.owner_key`, `generation`, `released`; registry release checks exact token identity. Tokens serialize resolved session IDs within one event loop and can rebind after rotation. |
+| Malformed constraints | Durable holder/acquired_at/expires_at are NOT NULL; API rejects falsy session ID/holder and converts/clamps TTL. No explicit finite-number/type CHECK or mandatory holder-format validation establishes universal malformed-state exclusion. Registry coerces generation with `int()`. This does not prove SP16 impossible. |
+
+Generation concepts are not interchangeable:
+
+- Core `Session.generation` is session-state/persistence CAS version; candidate mutation is adopted by `SessionService` only after persistence success.
+- Core `lease_generation` increments on acquisition; release/close require owner plus matching ownership epoch. Core has no lease deadline/TTL field.
+- Durable legacy fencing uses holder-token equality, not an integer acquisition counter. Same-holder reacquisition may succeed; core reacquisition while owned is rejected. The bounded SP3 observation does not claim complete transition equivalence.
+- Gateway `TurnState.lease_generation` / `TurnLeaseToken.generation` carry the caller's monotonic process-local `run_generation`; this is not a demonstrated durable core lease epoch.
+- `conversation_generations` advances conversation boundaries; message/transcript generations concern replay/compaction. Git metadata generation fences git updates. SessionDB registry/file generations identify resource lifetimes. Migration-controller generation fences migration transitions. None is substituted for core lease generation.
+- Session `ended_at`, `expiry_finalized` and idle/daily session expiry are not turn-lease expiry. `gateway_heartbeats` tracks backend liveness; it is not the `session_turn_leases.expires_at` clock. Compression locks are another table and scope, not the turn lease being compared.
+
+### Executable evidence and classifications
+
+Added only `tests/hermes_core/test_offline_lease_parity.py`. Its fixture sets temporary HERMES_HOME before importing real SessionDB and creates a temporary root session with explicit profile/key. All mutations use real SessionDB APIs; `read_lease` uses SQLite `mode=ro` SELECT solely to observe the repository-created table. No direct SQL mutation/custom schema, fake legacy lease rows, production ownership transfer, gateway startup or lease refresher/watchdog occurs. The paired core side uses real `Session.acquire_lease` / `release_lease`; no CAS fake is presented as legacy authority.
+
+| Scenario | Classification | Evidence and exact scope |
+|---|---|---|
+| SP3 lease owner | MATCH | `test_sp3_real_durable_holder_matches_core_exclusive_owner`: supported real acquisition produces a durable holder equal to the actual core-acquired owner; a different contender is rejected on both sides; wrong-owner release leaves the durable row and core owner intact. This is owner/exclusivity parity for a live root-session lease, not epoch/TTL/full-acquisition-policy parity. |
+| SP4 lease generation/version | UNVERIFIED | Durable table has no integer lease epoch; gateway uses process run generation. No exact translation to core ownership epochs was established or tested. Absence of a column alone is not a global NOT_APPLICABLE proof. |
+| SP5 lease expiry present | UNVERIFIED | SP3 test observes the real acquired/expires timestamps and their 300s difference. Real TTL exists, so NOT_APPLICABLE would be wrong. Core has no equivalent expiry state/behavior; no paired expiry normalization, timeout/reclaim execution or intentional-delta contract was established. |
+| SP6 no lease | MATCH | `test_sp6_real_absent_and_released_lease_matches_core_unowned`: actual durable row absence before acquisition and after supported release agrees with core owner None; intermediate acquired owner agrees; post-release refresh fails and repeated legacy release leaves no row. Session remains open. Core default alone is not used as proof. |
+| SP16 malformed lease data | UNVERIFIED | Constraints/guards were inspected, but no authoritative malformed-state parity executed and universal impossibility was not proven. No corruption, fabricated dictionary or replacement schema was used. |
+
+The separately executed existing `test_turn_lease_refresh_and_release_are_owner_fenced` confirms real legacy owner-fenced refresh/release/reacquisition. It is supporting legacy evidence, not additional paired epoch/expiry evidence. Existing core CAS tests remain core-only. These tests intentionally mutate temporary fixture leases; they are not described as no-write projection tests or multi-process/restart proof.
+
+### Validation receipts
+
+| Check | Exact command | Result |
+|---|---|---|
+| Focused lease parity | `C:\Python314\python.exe -m pytest tests/hermes_core/test_offline_lease_parity.py --confcutdir=tests/hermes_core -q -ra` | 2 passed, 0 failed/skipped; 1 `PytestCacheWarning` (WinError 183); 1.75s; exit 0 |
+| Full core | `C:\Python314\python.exe -m pytest tests/hermes_core --confcutdir=tests/hermes_core -q -ra` | 219 passed, 0 failed/skipped; 1 `PytestCacheWarning` (WinError 183); 20.72s; exit 0 |
+| Compileall | `C:\Python314\python.exe -m compileall hermes_core` | PASS; exit 0 |
+| Canonical core | `& 'C:\Program Files\Git\bin\bash.exe' -lc 'export PATH=/usr/bin:/bin:$PATH; export HERMES_PYTHON=/c/Python314/python.exe; scripts/run_tests.sh tests/hermes_core --confcutdir=tests/hermes_core'` | 13 files, 219 passed, 0 failed, 100% complete; 34.3s; 24 workers; exit 0 |
+| Narrow legacy lease selector | `& 'C:\Program Files\Git\bin\bash.exe' -lc 'export PATH=/usr/bin:/bin:$PATH; export HERMES_PYTHON=/c/Python314/python.exe; scripts/run_tests.sh tests/state/test_session_turn_lease.py -k test_turn_lease_refresh_and_release_are_owner_fenced'` | 1 file, 1 passed, 0 failed, 100% selected run complete; 9.5s; 24 workers; exit 0. Other tests in the file were not executed. |
+| Safe TUI legacy selector | `C:\Python314\python.exe -m pytest tests/tui_gateway/test_session_resume_db_ownership.py -q -ra` | COLLECTION ERROR; 0 behavioral tests executed; 1 collection error, 2 `PytestCacheWarning` warnings (WinError 183); 1.49s; exit 1 |
+
+TUI collection import chain: test → `tui_gateway/server.py` → `agent/conversation_loop.py` → `hermes_logging.py` → `concurrent_log_handler`; `ModuleNotFoundError: No module named 'concurrent_log_handler'`. This is an infrastructure/collection blocker, not a failed behavioral assertion. Cache warnings concern `.pytest_cache/v/cache` creation, not behavioral correctness. Canonical summaries report no retries/skips, but suppress successful per-file warning detail; no zero-warning claim is made. Estimates ~193/~19 are not executed test counts. No dependencies were installed or bypassed.
+
+### Totals, readiness and authorization
+
+| Generation | MATCH | INTENTIONAL_DELTA | UNVERIFIED | NOT_APPLICABLE |
+|---|---:|---:|---:|---:|
+| Sprint 1.5.15 targeted SP3/SP4/SP5/SP6/SP16 | 2 | 0 | 3 | 0 |
+| Current SP1–SP20 after Sprint 1.5.15 | 12 | 0 | 8 | 0 |
+
+MATCH: SP1, SP2, SP3, SP6, SP7, SP9, SP12, SP13, SP17, SP18, SP19, SP20. UNVERIFIED: SP4, SP5, SP8, SP10, SP11, SP14, SP15, SP16. Existing projection tests and lifecycle mapping were not modified; prior MATCH observations pass. Unrelated classifications and historical totals remain unchanged.
+
+B1 remains `PARTIALLY_ADDRESSED`: bounded real owner fencing improves evidence but does not establish a complete transactional adapter, epoch mapping or multi-process recovery. B2 remains `PARTIALLY_ADDRESSED`: complete persistence/projection coverage is absent. P remains `PARTIAL` with eight unresolved scenarios. B remains `PARTIAL`: TUI collection and full regression/performance/rollback/operational evidence remain incomplete.
+
+Phase 0 is `AUTHORIZED`; Phase 1–4 are `NOT_AUTHORIZED`. Production migration remains **NO-GO**. No production runtime/schema changes or production resources were used. No commit or push.
