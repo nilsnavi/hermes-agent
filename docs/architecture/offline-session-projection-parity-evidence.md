@@ -157,3 +157,71 @@ Current MATCH observations are SP1, SP2, SP7, SP19 and SP20. SP3–SP6 and SP8�
 - B — `PARTIAL`: the legacy collection blocker and incomplete regression/performance/rollback/operational evidence remain.
 
 Phase 0 remains `AUTHORIZED` for offline/isolated validation only. Phase 1, Phase 2, Phase 3 and Phase 4 remain `NOT_AUTHORIZED`. No production home/database, network, credentials, provider/tool/delivery execution, runtime wiring, ownership transfer or shadow/canary/cutover was used. Production migration remains **NO-GO**.
+
+## Sprint 1.5.13 — Adapter Metadata Parity
+
+Baseline: `4502bc8f9564479ef6eb16a6ab38d0b38a819af7` (verified HEAD, clean initial working tree). The user's explicit baseline supersedes `6b499e3f215d91fe9ad599981a811045cb1aa6e7` in `.ai/prompts/sprint-1.5.13-adapter-metadata-parity.md`. This section is a new evidence generation; Sprint 1.5.10–1.5.12 sections and historical receipts are unchanged.
+
+### Inspected schema, APIs and ownership
+
+Inspected at the baseline above: `hermes_state_common.py::SCHEMA_SQL`; `hermes_state_sessions.py::SessionSessionsMixin._insert_session_row`, `create_session`, `_inherit_parent_session_metadata`, `get_session` and model-config mutation helpers; `hermes_state.py::SessionDB._session_row_dict`; `hermes_core/domain/session.py::Session`; and the test-only `project_detached`. `gateway/session_recovery.py::_origin_json` and its creation call site were read as source only: gateway serializes source metadata into the real `origin_json` column. No gateway lifecycle or routing path was executed for this evidence.
+
+`create_session` accepts explicit profile/source/origin-related inputs and inserts them into the real schema. `model_config` is serialized with `json.dumps`. `get_session` selects the authoritative row and resolves system-prompt text; `_session_row_dict` does not decode JSON into nested mutable values. The tests therefore compare actual SQLite scalar values, including serialized JSON strings. They do not feed constructed legacy rows into the projection.
+
+Ownership below describes this detached projection boundary, not transfer of production authority:
+
+| Inspected fields | Ownership / treatment |
+|---|---|
+| `id`, `session_key`, `parent_session_id` | Core identity/key/lineage; projected into existing domain value objects. |
+| `source` | Stored by legacy; explicitly represented in core `metadata["source"]` by the existing helper. Not duplicated into the adapter envelope. |
+| `profile_name` | Adapter-owned/preserved; explicit fixture profile avoids home-derived profile discovery. No profile-based authorization claim. |
+| `origin_json`, `user_id`, `chat_id`, `chat_type`, `thread_id`, `display_name` | Adapter-owned/preserved origin/routing context. `origin_json` exists as TEXT and is accepted by `create_session`; a literal `origin` field is absent at this boundary. No routing behavior is exercised. |
+| `started_at`, `last_activity_at` | Adapter-owned/preserved timestamps. No top-level `updated_at` column exists in the inspected session schema; it is not invented or substituted for another timestamp. |
+| `ended_at` | Lifecycle-derived: NULL -> ACTIVE, non-NULL authoritative ended snapshot -> CLOSED; raw value also preserved in adapter metadata. Sprint 1.5.12 mapping is unchanged. |
+| `end_reason`, `expiry_finalized` | Adapter-owned/preserved. Neither is reinterpreted as an expired core status; SP8 stays UNVERIFIED. |
+| `model`, `model_config`, `billing_provider`, `billing_base_url`, `billing_mode` | Adapter-owned/preserved values at this boundary; no provider execution or affinity equivalence claim. JSON config remains text. |
+| `cwd`, `git_repo_root`, `git_branch`, `git_metadata_generation`, `system_prompt`, `system_prompt_hash` | Adapter-owned/preserved; no filesystem/project activation or prompt execution. |
+| Counters, costs/pricing fields, title/activity/handoff/compression fields, `archived`, `pinned`, `hidden`, `last_read_at`, `tool_names` | Remaining current-schema fields are preserved in the adapter envelope with their returned values/types, including NULL/default values. Passing preservation does not prove the behavior of these subsystems. |
+| Core `generation`, `lease_generation`, `lease_owner` | Existing core defaults; not derived from legacy metadata. Mutation/lease parity is unresolved. |
+| Arbitrary new top-level metadata keys / future columns | No generic top-level metadata creation API was established. Future-schema compatibility is not claimed. Existing JSON fields accept serialized content, but tests use existing fields and known payload keys only. |
+
+### Executed evidence and classifications
+
+Both tests use the existing `isolated_legacy_home` fixture, real `hermes_state.SessionDB`, explicit `tmp_path` database paths and supported `create_session` calls. Production runtime and `project_detached` were not modified. No direct SQL, custom schema, fabricated returned keys or monkeypatched legacy values are used by these tests.
+
+| Scenario | Result | Exact executable evidence |
+|---|---|---|
+| SP9 profile/source/origin | MATCH | `test_sp9_real_profile_source_origin_preserved`: creates real parent/child rows with explicit `source="local"`, `profile_name="offline"`, `origin_json`, chat/user/display fields. Authoritative reread equals the supplied profile/source/origin values; core source, ID/key/parent and ACTIVE lifecycle match the row; adapter fields retain values/types. Profile/origin stay outside core metadata. Repeated projection is equivalent; replacing core source and adapter profile/origin does not change the source or durable reread. |
+| SP12 unknown/adapter metadata | MATCH, current-schema scope only | `test_sp12_real_adapter_fields_preserve_types_and_session_isolation`: creates two real sessions with distinct models, serialized model configs, profiles, display names and cwd strings. Checks persisted fixture values, JSON content, float timestamp/int marker/string config/NULL reason, and exact preservation of every returned non-core field and its type. Core identity/key/lifecycle remain correct. Mutating one projection's config/display/source leaves the other projection, both original rows and fresh projections unchanged. |
+
+SP12 means preservation of authoritative fields outside core ownership in the current repository, not arbitrary future fields. Returned row values in this fixture are scalars; `origin_json` and `model_config` are immutable strings. No authoritative nested mutable value is returned here, so nested-object detachment is not claimed. The separate adapter dictionary and core metadata dictionary are mutation-tested. The older hand-built `unknown` helper test is not provenance for this MATCH.
+
+No-write proof: writer creation/setup is completed and writer closed before baseline SHA-256. Real readers use `SessionDB(path, read_only=True)`. Main database digests remain identical during projection and after reader close. Source snapshots equal fresh authoritative reads after detached mutations. This is bounded read/projection content evidence, not absence of SQLite sidecar activity or a production fencing guarantee.
+
+### Validation receipts
+
+| Check | Exact command | Executed result |
+|---|---|---|
+| Focused | `C:\Python314\python.exe -m pytest tests/hermes_core/test_offline_session_projection_parity.py --confcutdir=tests/hermes_core -q -ra` | 30 passed, 0 failed, 0 skipped; 1 `PytestCacheWarning` (WinError 183); 16.84s; exit 0 |
+| Full core | `C:\Python314\python.exe -m pytest tests/hermes_core --confcutdir=tests/hermes_core -q -ra` | 212 passed, 0 failed, 0 skipped; 1 `PytestCacheWarning` (WinError 183); 17.28s; exit 0 |
+| Compileall | `C:\Python314\python.exe -m compileall hermes_core` | PASS; exit 0 |
+| Canonical | `& 'C:\Program Files\Git\bin\bash.exe' -lc 'export PATH=/usr/bin:/bin:$PATH; export HERMES_PYTHON=/c/Python314/python.exe; scripts/run_tests.sh tests/hermes_core --confcutdir=tests/hermes_core'` | 12 files, 212 passed, 0 failed, 100% complete; 32.0s; 24 workers; exit 0. No skips/retries reported; summarized successful-file output does not establish zero warnings. The initial ~186 estimate is not the executed count. |
+| Safe legacy selector | `C:\Python314\python.exe -m pytest tests/tui_gateway/test_session_resume_db_ownership.py -q -ra` | COLLECTION ERROR; 0 behavioral tests executed; 1 collection error, 2 `PytestCacheWarning` warnings (WinError 183); 1.36s; exit 1 |
+
+The supported Python environment was used with approved access to installed pytest; no dependencies were installed or bypassed. Safe-selector import chain: `tests/tui_gateway/test_session_resume_db_ownership.py → tui_gateway/server.py → agent/conversation_loop.py → hermes_logging.py → concurrent_log_handler`; error: `ModuleNotFoundError: No module named 'concurrent_log_handler'`. This is an infrastructure/collection blocker, not a behavioral failure. Cache warnings concern `.pytest_cache/v/cache` creation and are not behavioral failures either.
+
+### Parity, readiness and authorization
+
+| Generation | MATCH | INTENTIONAL_DELTA | UNVERIFIED | NOT_APPLICABLE |
+|---|---:|---:|---:|---:|
+| Sprint 1.5.13 targeted SP9/SP12 | 2 | 0 | 0 | 0 |
+| Current SP1–SP20 after Sprint 1.5.13 | 7 | 0 | 13 | 0 |
+
+Current MATCH: SP1, SP2, SP7, SP9, SP12, SP19, SP20. SP3–SP6, SP8, SP10–SP11 and SP13–SP18 remain UNVERIFIED. Previous MATCH assertions were not weakened and pass. Historical generations retain their original totals; SP8 was not reclassified.
+
+- B1 — `PARTIALLY_ADDRESSED`: metadata preservation does not prove transactional mutation fencing.
+- B2 — `PARTIALLY_ADDRESSED`: current metadata coverage improves, but remaining preservation requirements are unresolved.
+- P — `PARTIAL`: 13 scenarios remain UNVERIFIED; counts do not authorize migration.
+- B — `PARTIAL`: legacy collection remains blocked; complete regression, performance, rollback and operational evidence is absent.
+
+Phase 0 is `AUTHORIZED` for offline/isolated validation only. Phase 1–4 are `NOT_AUTHORIZED`. Production migration remains **NO-GO**. No production HERMES_HOME/user DB, credentials/network, provider/tool/delivery execution, runtime wiring, ownership transfer or shadow/canary/cutover was used. No commit or push was performed.

@@ -286,3 +286,106 @@ def test_sp8_expiry_finalized_flag_does_not_establish_expired_or_closed(tmp_path
     finally:
         reader.close()
     assert _file_digest(path) == before
+
+
+def test_sp9_real_profile_source_origin_preserved(tmp_path):
+    from hermes_state import SessionDB
+
+    path = tmp_path / "origin-state.db"
+    origin = json.dumps({"platform": "local", "chat_id": "offline-chat"})
+    writer = SessionDB(path)
+    try:
+        writer.create_session("parent", "local", profile_name="offline")
+        writer.create_session(
+            "child", "local", session_key="offline-key", parent_session_id="parent",
+            profile_name="offline", origin_json=origin, chat_id="offline-chat",
+            chat_type="dm", user_id="offline-user", display_name="Offline origin",
+        )
+    finally:
+        writer.close()
+    before = _file_digest(path)
+    reader = SessionDB(path, read_only=True)
+    try:
+        row = reader.get_session("child")
+        snapshot = deepcopy(row)
+        assert row["source"] == "local"
+        assert row["profile_name"] == "offline"
+        assert row["origin_json"] == origin
+        core, adapter = project_detached(row)
+        assert core.metadata == {"source": row["source"]}
+        assert core.session_id.value == row["id"] == "child"
+        assert core.key.value == row["session_key"] == "offline-key"
+        assert core.parent_session_id.value == row["parent_session_id"] == "parent"
+        assert row["ended_at"] is None and core.status is SessionStatus.ACTIVE
+        for field in ("profile_name", "origin_json", "chat_id", "chat_type", "user_id", "display_name"):
+            assert adapter[field] == row[field]
+            assert type(adapter[field]) is type(row[field])
+        assert "profile_name" not in core.metadata and "origin_json" not in core.metadata
+        assert adapter is not row
+        assert project_detached(reader.get_session("child")) == (core, adapter)
+        core.metadata["source"] = "detached-source"
+        adapter["profile_name"] = "detached-profile"
+        adapter["origin_json"] = "null"
+        assert row == snapshot == reader.get_session("child")
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+    assert _file_digest(path) == before
+
+
+def test_sp12_real_adapter_fields_preserve_types_and_session_isolation(tmp_path):
+    """Current repository fields outside core ownership, not future-schema proof."""
+    from hermes_state import SessionDB
+
+    path = tmp_path / "adapter-state.db"
+    writer = SessionDB(path)
+    try:
+        for name in ("a", "b"):
+            writer.create_session(
+                name, "local", session_key=f"key-{name}", profile_name=f"profile-{name}",
+                model=f"offline-model-{name}", model_config={"model": f"offline-model-{name}"},
+                display_name=f"Session {name}", cwd=str(tmp_path / name),
+            )
+    finally:
+        writer.close()
+    before = _file_digest(path)
+    reader = SessionDB(path, read_only=True)
+    try:
+        rows = [reader.get_session(name) for name in ("a", "b")]
+        snapshots = deepcopy(rows)
+        projections = [project_detached(row) for row in rows]
+        for name, row, (core, adapter) in zip(("a", "b"), rows, projections):
+            assert row["model"] == f"offline-model-{name}"
+            assert json.loads(row["model_config"]) == {"model": row["model"]}
+            assert row["display_name"] == f"Session {name}"
+            assert row["cwd"] == str(tmp_path / name)
+            assert type(row["started_at"]) is float
+            assert type(row["expiry_finalized"]) is int
+            assert type(row["model_config"]) is str
+            assert row["end_reason"] is None
+            expected_fields = row.keys() - {"id", "session_key", "parent_session_id", "source"}
+            assert adapter.keys() == expected_fields
+            for field in expected_fields:
+                assert adapter[field] == row[field]
+                assert type(adapter[field]) is type(row[field])
+            # SQLite row values here are scalars, including serialized JSON text.
+            assert all(value is None or type(value) in (str, int, float, bytes) for value in row.values())
+            assert core.session_id.value == row["id"] == name
+            assert core.key.value == row["session_key"]
+            assert core.status is SessionStatus.ACTIVE
+            assert core.parent_session_id is None
+            assert adapter is not row
+            assert project_detached(reader.get_session(name)) == (core, adapter)
+        pristine = deepcopy(projections)
+        projections[0][1]["model_config"] = "null"
+        projections[0][1]["display_name"] = "detached"
+        projections[0][0].metadata["source"] = "detached"
+        assert projections[1] == pristine[1]
+        assert rows == snapshots
+        for index, name in enumerate(("a", "b")):
+            assert reader.get_session(name) == snapshots[index]
+            assert project_detached(reader.get_session(name)) == pristine[index]
+        assert _file_digest(path) == before
+    finally:
+        reader.close()
+    assert _file_digest(path) == before
