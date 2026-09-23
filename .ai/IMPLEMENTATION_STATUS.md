@@ -21,6 +21,34 @@ Architecture goals:
 
 ---
 
+## Infrastructure Closeout — 2026-09-23
+
+Status:
+COMPLETE
+
+Final integrated commit:
+`efba47af7731f63681d87736f5bea1e4c9048651`
+
+Merged pull requests:
+- PR #1 — Infrastructure fixes integration
+- PR #2 — Contributor attribution mappings
+
+Tags:
+- Historical pre-integration: `hermes-v2-infrastructure-closeout-2026.09.22` -> `9afedc0ea326e619bec873e5a888ecd70095b6c6`
+- Final integrated: `hermes-v2-infrastructure-closeout-final-2026.09.23` -> `efba47af7731f63681d87736f5bea1e4c9048651`
+
+Closeout scope:
+- Singularity `search_files` sandbox fixes
+- transient HTTP 5xx / `Retry-After` handling
+- model catalog reconciliation and guarded model replacement
+- contributor-attribution CI housekeeping
+- integration branch cleanup and final tag publication
+
+Boundary:
+**Sprint 1.3.7 MUST NOT be started as part of this closeout.**
+
+---
+
 # Sprint Status
 
 
