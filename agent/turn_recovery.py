@@ -973,30 +973,43 @@ def compute_error_backoff(
     agent: Any, api_error: Exception, *, retry_count: int, max_retries: int, is_rate_limited: bool,
     is_zai_coding_overload: bool, base_url: Any, model: Any,
 ) -> float:
-    """Pick the wait before the next API retry and announce it. Retry-After wins for rate
-    limits (capped at 600s: Anthropic Tier 1 buckets reset in ~171s, so a 120s cap re-tripped
-    the limit); otherwise jittered backoff, replaced by the adaptive policy for 429s / Z.AI
-    overloads. Normal retries are buffered; long Z.AI Coding waits surface immediately."""
+    """Pick the wait before the next API retry and announce it.
+
+    Retry-After wins for retryable HTTP failures and is capped at 600s.
+    Without Retry-After, use jittered backoff; rate limits and Z.AI Coding
+    overloads may replace that delay with the adaptive policy. Normal retries
+    are buffered; long Z.AI Coding waits surface immediately.
+    """
     # Imported lazily so tests that patch ``agent.retry_utils.jittered_backoff`` /
     # ``adaptive_rate_limit_backoff`` (incl. the run_agent conftest fast-backoff fixture) intercept.
-    from agent.retry_utils import adaptive_rate_limit_backoff, jittered_backoff
+    from agent.retry_utils import (
+        adaptive_rate_limit_backoff,
+        jittered_backoff,
+        parse_retry_after_seconds,
+    )
 
-    _retry_after = None
-    _resp_headers = getattr(getattr(api_error, "response", None), "headers", None) if is_rate_limited else None
-    if _resp_headers and hasattr(_resp_headers, "get"):
-        _ra_raw = _resp_headers.get("retry-after") or _resp_headers.get("Retry-After")
-        if _ra_raw:
-            try:
-                # Cap at 10 minutes. Anthropic Tier 1 input-token buckets reset in ~171s, so a 120s cap
-                # caused us to retry before the actual reset window and re-trip the limit. 600s covers all
-                # realistic provider reset windows while still rejecting pathological values. (#26293)
-                _retry_after = min(float(_ra_raw), 600)
-            except (TypeError, ValueError):
-                pass
-    wait_time = _retry_after if _retry_after else jittered_backoff(retry_count, base_delay=2.0, max_delay=60.0)
+    # Retry-After is a generic HTTP retry hint, not a rate-limit-only signal.
+    # Providers / reverse proxies (including transient 5xx paths) may return it
+    # with 500/502/503/504 responses. This function is reached only after the
+    # classifier/recovery policy has decided the error is retryable, so honour
+    # the provider delay here without widening retryability itself.
+    _resp_headers = getattr(getattr(api_error, "response", None), "headers", None)
+    _retry_after = parse_retry_after_seconds(_resp_headers)
+
+    if _retry_after is not None:
+        # Cap at 10 minutes. Anthropic Tier 1 input-token buckets reset in ~171s,
+        # while 600s also accommodates transient upstream maintenance windows
+        # without accepting pathological provider values.
+        _retry_after = min(_retry_after, 600.0)
+
+    wait_time = (
+        _retry_after
+        if _retry_after is not None
+        else jittered_backoff(retry_count, base_delay=2.0, max_delay=60.0)
+    )
     _backoff_policy = None
     _adaptive = is_rate_limited or is_zai_coding_overload
-    if _adaptive and not _retry_after:
+    if _adaptive and _retry_after is None:
         wait_time, _backoff_policy = adaptive_rate_limit_backoff(
             retry_count, base_url=str(base_url), model=model, error=api_error, default_wait=wait_time,
         )

@@ -213,8 +213,8 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         if cmd == "rg":
             return self._resolve_command(cmd) is not None
         if cmd not in self._command_cache:
-            result = self._exec(f"command -v {cmd} >/dev/null 2>&1 && echo 'yes'")
-            self._command_cache[cmd] = result.stdout.strip() == 'yes'
+            result = self._exec(f"command -v {cmd} >/dev/null 2>&1")
+            self._command_cache[cmd] = result.exit_code == 0
         return self._command_cache[cmd]
 
     def _cat(self, path: str) -> ExecuteResult:

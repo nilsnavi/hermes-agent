@@ -160,10 +160,19 @@ _SANDBOX_ROWS = {
 }
 
 
-def _build_sandbox_env(env_type, *, image, cwd, timeout, cc, task_id, **_):
+def _build_sandbox_env(
+    env_type, *, image, cwd, timeout, cc, task_id, host_cwd=None, **_
+):
     cls, with_image, extra = _SANDBOX_ROWS[env_type]
-    kwargs = dict(cwd=cwd, timeout=timeout, task_id=task_id, **_resources(cc),
-                  **({"image": image} if with_image else {}))
+    kwargs = dict(
+        cwd=cwd,
+        timeout=timeout,
+        task_id=task_id,
+        **_resources(cc),
+        **({"image": image} if with_image else {}),
+    )
+    if env_type == "singularity":
+        kwargs["host_cwd"] = host_cwd
     kwargs.update(extra(cc, kwargs))
     return cls()(**kwargs)
 
